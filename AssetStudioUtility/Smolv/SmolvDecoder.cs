@@ -190,18 +190,92 @@ namespace Smolv
 								return false;
 							}
 
-							int zds = prevDecorate + unchecked((int)value);
+							int zds = prevDecorate + ZigDecode(value);
 							output.Write(zds);
 							prevDecorate = zds;
 							ioffs++;
 						}
 
+						if (op == SpvOp.MemberDecorate)
+						{
+							if (input.BaseStream.Position >= inputEndPosition)
+							{
+								return false;
+							}
+
+							int count = input.ReadByte();
+							int prevIndex = 0;
+							int prevOffset = 0;
+							for (int m = 0; m < count; m++)
+							{
+								if (!ReadVarint(input, out uint memberIndexValue))
+								{
+									return false;
+								}
+								int memberIndex = prevIndex + unchecked((int)memberIndexValue);
+								prevIndex = memberIndex;
+
+								if (!ReadVarint(input, out uint memberDec))
+								{
+									return false;
+								}
+
+								int knownExtraOps = DecorationExtraOps(unchecked((int)memberDec));
+								uint memberLen;
+								if (knownExtraOps == -1)
+								{
+									if (!ReadVarint(input, out memberLen))
+									{
+										return false;
+									}
+									memberLen += 4;
+								}
+								else
+								{
+									memberLen = unchecked((uint)(4 + knownExtraOps));
+								}
+
+								if (m != 0)
+								{
+									output.Write((memberLen << 16) | (uint)op);
+									output.Write(prevDecorate);
+								}
+								output.Write(memberIndex);
+								output.Write(memberDec);
+
+								if (memberDec == 35)
+								{
+									if (memberLen != 5)
+									{
+										return false;
+									}
+									if (!ReadVarint(input, out uint offsetValue))
+									{
+										return false;
+									}
+									int offset = prevOffset + unchecked((int)offsetValue);
+									output.Write(offset);
+									prevOffset = offset;
+								}
+								else
+								{
+									for (uint i = 4; i < memberLen; i++)
+									{
+										if (!ReadVarint(input, out uint value))
+										{
+											return false;
+										}
+										output.Write(value);
+									}
+								}
+							}
+							continue;
+						}
+
 						// Read this many IDs, that are relative to result ID
 						int relativeCount = op.OpDeltaFromResult();
-						bool inverted = false;
 						if (relativeCount < 0)
 						{
-							inverted = true;
 							relativeCount = -relativeCount;
 						}
 						for (int i = 0; i < relativeCount && ioffs < instrLen; ++i, ++ioffs)
@@ -211,7 +285,7 @@ namespace Smolv
 								return false;
 							}
 
-							int zd = inverted ? ZigDecode(value) : unchecked((int)value);
+							int zd = ZigDecode(value);
 							output.Write(prevResult - zd);
 						}
 
