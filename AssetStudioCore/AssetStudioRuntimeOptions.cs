@@ -124,8 +124,6 @@ namespace AssetStudioCore.Runtime
 
         public static LoggerEvent LogMinLevel => Current.LogLevel;
 
-        public static IReadOnlyCollection<string> CliArgs => Current.CliArgs;
-
         public static FilenameFormat FilenameFormat => Current.FilenameFormat;
 
         public static bool OverwriteExisting => Current.OverwriteExisting;
@@ -146,12 +144,12 @@ namespace AssetStudioCore.Runtime
 
         public static bool RawByteArrayFromMonoBehaviour => Current.RawByteArrayFromMonoBehaviour;
 
-        public static void ApplyCliSnapshot(AssetStudioCoreCliOptionsSnapshot snapshot)
+        public static void ApplySnapshot(AssetStudioRuntimeOptionsSnapshot snapshot)
         {
-            Current = CreateFromCliSnapshot(snapshot);
+            Current = CreateFromSnapshot(snapshot);
         }
 
-        public static RuntimeOptionsState CreateFromCliSnapshot(AssetStudioCoreCliOptionsSnapshot snapshot)
+        public static RuntimeOptionsState CreateFromSnapshot(AssetStudioRuntimeOptionsSnapshot snapshot)
         {
             if (snapshot == null)
             {
@@ -185,7 +183,6 @@ namespace AssetStudioCore.Runtime
                 AssemblyPath = snapshot.AssemblyPath,
                 ExportAssetTypes = new List<ClassIDType>(snapshot.ExportAssetTypes),
                 LogOutput = snapshot.LogOutput,
-                CliArgs = snapshot.CliArgs ?? Array.Empty<string>(),
                 FilenameFormat = snapshot.FilenameFormat,
                 OverwriteExisting = snapshot.OverwriteExisting,
                 ConvertTexture = snapshot.ConvertTexture,
@@ -224,7 +221,6 @@ namespace AssetStudioCore.Runtime
 
             var runtimeOptions = RuntimeOptionsState.CreateDefaults();
             runtimeOptions.IsParsed = true;
-            runtimeOptions.CliArgs = Array.Empty<string>();
             runtimeOptions.InputPaths.Add(inputPath);
             runtimeOptions.WorkMode = WorkMode.Info;
             runtimeOptions.OutputFolder = string.IsNullOrWhiteSpace(options.OutputDir)
@@ -430,7 +426,6 @@ namespace AssetStudioCore.Runtime
             public string AssemblyPath { get; set; } = string.Empty;
             public List<ClassIDType> ExportAssetTypes { get; set; } = new List<ClassIDType>();
             public LogOutputMode LogOutput { get; set; }
-            public string[] CliArgs { get; set; } = Array.Empty<string>();
             public FilenameFormat FilenameFormat { get; set; }
             public bool OverwriteExisting { get; set; }
             public bool ConvertTexture { get; set; }

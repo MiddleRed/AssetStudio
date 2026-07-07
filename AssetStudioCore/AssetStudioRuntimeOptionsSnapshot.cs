@@ -3,12 +3,16 @@
 using AssetStudio;
 using AssetStudioCore.Options;
 using CubismLive2DExtractor;
-using System;
 using System.Collections.Generic;
 
 namespace AssetStudioCore.Runtime
 {
-    internal sealed class AssetStudioCoreCliOptionsSnapshot
+    /// <summary>
+    /// Front-end-agnostic snapshot of runtime options. Front-ends (CLI, FFI hosts)
+    /// fill this DTO from their own option sources and hand it to
+    /// <see cref="AssetStudioRuntimeOptions.ApplySnapshot"/>.
+    /// </summary>
+    internal sealed class AssetStudioRuntimeOptionsSnapshot
     {
         public bool IsParsed { get; set; }
         public FilterBy FilterBy { get; set; }
@@ -35,7 +39,6 @@ namespace AssetStudioCore.Runtime
         public string AssemblyPath { get; set; } = string.Empty;
         public List<ClassIDType> ExportAssetTypes { get; set; } = new List<ClassIDType>();
         public LogOutputMode LogOutput { get; set; }
-        public string[] CliArgs { get; set; } = Array.Empty<string>();
         public FilenameFormat FilenameFormat { get; set; }
         public bool OverwriteExisting { get; set; }
         public bool ConvertTexture { get; set; }

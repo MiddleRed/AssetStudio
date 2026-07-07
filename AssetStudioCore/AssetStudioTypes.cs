@@ -26,6 +26,16 @@ namespace AssetStudioCore
         void Report(int value, int index);
     }
 
+    /// <summary>
+    /// Receives transient single-line status updates (e.g. an export counter).
+    /// Front-ends decide how to render them; the core never writes to the console.
+    /// </summary>
+    public interface IAssetStudioStatusSink
+    {
+        void ReportStatus(string message);
+        void CompleteStatus();
+    }
+
     public class AssetStudioCoreOptions
     {
         public string InputPath { get; set; } = "";

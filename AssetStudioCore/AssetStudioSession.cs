@@ -249,10 +249,12 @@ namespace AssetStudioCore
             IReadOnlyCollection<long>? exactPathIds = null,
             Dictionary<string, long>? phases = null,
             Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null)
+            Action? showCurrentOptions = null,
+            IProgress<int>[]? progressOverride = null,
+            IAssetStudioStatusSink? statusSink = null)
         {
             ThrowIfDisposed();
-            return engine.ExportCurrent(runtimeOptions, exactPathIds, phases, metrics, showCurrentOptions);
+            return engine.ExportCurrent(runtimeOptions, exactPathIds, phases, metrics, showCurrentOptions, progressOverride, statusSink);
         }
 
         public static AssetStudioSession Open(AssetStudioInspectOptions options)

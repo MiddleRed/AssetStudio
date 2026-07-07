@@ -26,7 +26,7 @@ namespace AssetStudioCLI
             {
                 throw new InvalidOperationException("AssetStudio CLI arguments could not be parsed.");
             }
-            AssetStudioRuntimeOptions.ApplyCliSnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
+            AssetStudioRuntimeOptions.ApplySnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
             return RunParsed(catchExceptions: false, exactPathIds, phases);
         }
 
@@ -60,10 +60,17 @@ namespace AssetStudioCLI
             {
                 throw new InvalidOperationException("AssetStudio context export arguments could not be parsed.");
             }
-            var runtimeOptions = AssetStudioRuntimeOptions.CreateFromCliSnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
+            var runtimeOptions = AssetStudioRuntimeOptions.CreateFromSnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
             AssetStudioRuntimeOptions.Use(runtimeOptions);
 
-            return activeSession?.ExportCurrent(runtimeOptions, exactPathIds, phases, metrics, CLIOptions.ShowCurrentOptions)
+            return activeSession?.ExportCurrent(
+                    runtimeOptions,
+                    exactPathIds,
+                    phases,
+                    metrics,
+                    CLIOptions.ShowCurrentOptions,
+                    AssetStudioConsoleProgressAdapter.CreatePair(),
+                    new AssetStudioConsoleStatusSink())
                 ?? throw new InvalidOperationException("there is no active AssetStudio session");
         }
 
@@ -93,8 +100,27 @@ namespace AssetStudioCLI
             Dictionary<string, long>? phases = null,
             Dictionary<string, long>? metrics = null)
         {
-            AssetStudioRuntimeOptions.ApplyCliSnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
-            return AssetStudioEngine.RunParsedCli(catchExceptions, exactPathIds, phases, metrics, CLIOptions.ShowCurrentOptions);
+            AssetStudioRuntimeOptions.ApplySnapshot(AssetStudioCliOptionsSnapshot.CreateFromCurrent());
+            var consoleLogger = new AssetStudioConsoleLogger(
+                CLIOptions.o_logOutput.Value,
+                CLIOptions.o_logLevel.Value,
+                CLIOptions.cliArgs ?? Array.Empty<string>());
+            try
+            {
+                return AssetStudioEngine.RunParsed(
+                    consoleLogger,
+                    AssetStudioConsoleProgressAdapter.CreatePair(),
+                    new AssetStudioConsoleStatusSink(),
+                    catchExceptions,
+                    exactPathIds,
+                    phases,
+                    metrics,
+                    CLIOptions.ShowCurrentOptions);
+            }
+            finally
+            {
+                consoleLogger.LogToFile(AssetStudio.LoggerEvent.Verbose, "---Program ended---");
+            }
         }
 
         private static void Measure(Dictionary<string, long> phases, string name, Action action)

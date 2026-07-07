@@ -2,11 +2,12 @@ using AssetStudio;
 using AssetStudioCore.Options;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-namespace AssetStudioCore.Runtime
+namespace AssetStudioCLI
 {
     internal class AssetStudioConsoleLogger : ILogger
     {
@@ -17,11 +18,11 @@ namespace AssetStudioCore.Runtime
         private readonly LogOutputMode logOutput;
         private readonly LoggerEvent logMinLevel;
 
-        public AssetStudioConsoleLogger(AssetStudioRuntimeOptions.RuntimeOptionsState options)
+        public AssetStudioConsoleLogger(LogOutputMode logOutput, LoggerEvent logMinLevel, IReadOnlyCollection<string> cliArgs)
         {
-            logOutput = options.LogOutput;
-            logMinLevel = options.LogLevel;
-            
+            this.logOutput = logOutput;
+            this.logMinLevel = logMinLevel;
+
             var appAssembly = typeof(AssetStudioConsoleLogger).Assembly.GetName();
             var arch = Environment.Is64BitProcess ? "x64" : "x32";
             LogName = $"{appAssembly.Name}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.log";
@@ -34,7 +35,7 @@ namespace AssetStudioCore.Runtime
             }
 
             LogToFile(LoggerEvent.Verbose, $"---{appAssembly.Name} v{appAssembly.Version} [{arch}] | Logger launched---\n" +
-                                           $"CMD Args: {string.Join(" ", options.CliArgs)}");
+                                           $"CMD Args: {string.Join(" ", cliArgs ?? Array.Empty<string>())}");
         }
 
         private static string ColorLogLevel(LoggerEvent logLevel)
@@ -58,7 +59,7 @@ namespace AssetStudioCore.Runtime
             var curTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             message = message.TrimEnd();
             var multiLine = message.Contains("\n");
-            
+
             string formattedMessage;
             if (consoleMode)
             {

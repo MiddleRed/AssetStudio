@@ -3,51 +3,32 @@
 using AssetStudio;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace AssetStudioCore.Runtime
 {
     internal static class AssetStudioProcessState
     {
+        private static readonly AsyncLocal<IAssetStudioStatusSink?> CurrentStatusSink = new AsyncLocal<IAssetStudioStatusSink?>();
+
         public static IDisposable EnterCore(ILogger logger, IAssetStudioProgressSink? progressSink)
         {
-            return new Scope(logger, CreateCoreProgress(progressSink), configureLogger: true);
+            return new Scope(logger, CreateCoreProgress(progressSink), statusSink: null, configureLogger: true);
         }
 
-        public static IDisposable EnterCli(ILogger logger)
+        public static IDisposable Enter(ILogger logger, IProgress<int>[] progress, IAssetStudioStatusSink? statusSink)
         {
-            return new Scope(logger, CreateConsoleProgress(), configureLogger: true);
+            return new Scope(logger, progress, statusSink, configureLogger: true);
         }
 
         public static IDisposable EnterCoreProgress(IAssetStudioProgressSink? progressSink)
         {
-            return new Scope(logger: null, CreateCoreProgress(progressSink), configureLogger: false);
+            return new Scope(logger: null, CreateCoreProgress(progressSink), statusSink: null, configureLogger: false);
         }
 
-        public static IDisposable EnterConsoleProgress()
+        public static IDisposable EnterProgress(IProgress<int>[] progress, IAssetStudioStatusSink? statusSink)
         {
-            return new Scope(logger: null, CreateConsoleProgress(), configureLogger: false);
-        }
-
-        public static void ConfigureCore(ILogger logger, IAssetStudioProgressSink? progressSink)
-        {
-            Logger.Default = logger ?? throw new ArgumentNullException(nameof(logger));
-            ConfigureCoreProgress(progressSink);
-        }
-
-        public static void ConfigureCli(ILogger logger)
-        {
-            Logger.Default = logger ?? throw new ArgumentNullException(nameof(logger));
-            ConfigureConsoleProgress();
-        }
-
-        public static void ConfigureCoreProgress(IAssetStudioProgressSink? sink)
-        {
-            SetProgress(CreateCoreProgress(sink));
-        }
-
-        public static void ConfigureConsoleProgress()
-        {
-            SetProgress(CreateConsoleProgress());
+            return new Scope(logger: null, progress, statusSink, configureLogger: false);
         }
 
         public static void ConfigureImageTimingSink(Action<string, long>? timingSink)
@@ -55,11 +36,22 @@ namespace AssetStudioCore.Runtime
             ImageSharpNativeAotGuard.TimingSink = timingSink;
         }
 
+        public static void ReportStatus(string message)
+        {
+            CurrentStatusSink.Value?.ReportStatus(message);
+        }
+
+        public static void CompleteStatus()
+        {
+            CurrentStatusSink.Value?.CompleteStatus();
+        }
+
         public static void Reset()
         {
             AssetStudioRuntimeOptions.Reset();
             Logger.Default = new DummyLogger();
-            ConfigureCoreProgress(null);
+            SetProgress(CreateCoreProgress(null));
+            CurrentStatusSink.Value = null;
             ConfigureImageTimingSink(null);
             Progress.Reset();
             Progress.Reset(index: 1);
@@ -74,15 +66,6 @@ namespace AssetStudioCore.Runtime
             };
         }
 
-        private static IProgress<int>[] CreateConsoleProgress()
-        {
-            return new IProgress<int>[]
-            {
-                new AssetStudioConsoleProgressAdapter(),
-                new AssetStudioConsoleProgressAdapter(),
-            };
-        }
-
         private static void SetProgress(IReadOnlyList<IProgress<int>> progress)
         {
             Progress.Default = progress[0];
@@ -93,10 +76,11 @@ namespace AssetStudioCore.Runtime
         {
             private readonly ILogger previousLogger;
             private readonly IProgress<int>[] previousProgress;
+            private readonly IAssetStudioStatusSink? previousStatusSink;
             private readonly bool configureLogger;
             private bool disposed;
 
-            public Scope(ILogger? logger, IProgress<int>[] progress, bool configureLogger)
+            public Scope(ILogger? logger, IProgress<int>[] progress, IAssetStudioStatusSink? statusSink, bool configureLogger)
             {
                 this.configureLogger = configureLogger;
                 previousLogger = Logger.Default;
@@ -105,11 +89,13 @@ namespace AssetStudioCore.Runtime
                     Progress.GetInstance(0),
                     Progress.GetInstance(1),
                 };
+                previousStatusSink = CurrentStatusSink.Value;
                 if (configureLogger)
                 {
                     Logger.Default = logger ?? throw new ArgumentNullException(nameof(logger));
                 }
                 SetProgress(progress);
+                CurrentStatusSink.Value = statusSink;
             }
 
             public void Dispose()
@@ -125,6 +111,7 @@ namespace AssetStudioCore.Runtime
                     Logger.Default = previousLogger;
                 }
                 SetProgress(previousProgress);
+                CurrentStatusSink.Value = previousStatusSink;
             }
         }
     }

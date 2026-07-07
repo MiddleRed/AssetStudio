@@ -21,7 +21,9 @@ namespace AssetStudioCore.Runtime
             IReadOnlyCollection<long>? exactPathIds = null,
             Dictionary<string, long>? phases = null,
             Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null);
+            Action? showCurrentOptions = null,
+            IProgress<int>[]? progressOverride = null,
+            IAssetStudioStatusSink? statusSink = null);
     }
 
     internal static class AssetStudioEngine
@@ -31,14 +33,17 @@ namespace AssetStudioCore.Runtime
             return AssetStudioEngineContext.Open(options, phases);
         }
 
-        public static AssetStudioRunResult RunParsedCli(
+        public static AssetStudioRunResult RunParsed(
+            ILogger logger,
+            IProgress<int>[] progress,
+            IAssetStudioStatusSink? statusSink,
             bool catchExceptions,
             IReadOnlyCollection<long>? exactPathIds = null,
             Dictionary<string, long>? phases = null,
             Dictionary<string, long>? metrics = null,
             Action? showCurrentOptions = null)
         {
-            return AssetStudioEngineContext.RunParsedCli(catchExceptions, exactPathIds, phases, metrics, showCurrentOptions);
+            return AssetStudioEngineContext.RunParsed(logger, progress, statusSink, catchExceptions, exactPathIds, phases, metrics, showCurrentOptions);
         }
 
         public static void ResetProcessLocalState()
@@ -126,7 +131,10 @@ namespace AssetStudioCore.Runtime
             }
         }
 
-        public static AssetStudioRunResult RunParsedCli(
+        public static AssetStudioRunResult RunParsed(
+            ILogger logger,
+            IProgress<int>[] progress,
+            IAssetStudioStatusSink? statusSink,
             bool catchExceptions,
             IReadOnlyCollection<long>? exactPathIds = null,
             Dictionary<string, long>? phases = null,
@@ -137,8 +145,7 @@ namespace AssetStudioCore.Runtime
             metrics ??= new Dictionary<string, long>();
             var runtimeOptions = AssetStudioRuntimeOptions.Current;
             var studioEngine = AssetStudioEngineInstance.Create(runtimeOptions);
-            var cliLogger = new AssetStudioConsoleLogger(runtimeOptions);
-            using (AssetStudioProcessState.EnterCli(cliLogger))
+            using (AssetStudioProcessState.Enter(logger, progress, statusSink))
             {
                 AssetStudioSession.Measure(phases, "prepare_run", studioEngine.PrepareForRun);
                 if (showCurrentOptions != null)
@@ -174,7 +181,6 @@ namespace AssetStudioCore.Runtime
                 finally
                 {
                     AssetStudioSession.Measure(phases, "clear", studioEngine.Clear);
-                    cliLogger.LogToFile(LoggerEvent.Verbose, "---Program ended---");
                 }
             }
 
@@ -204,7 +210,9 @@ namespace AssetStudioCore.Runtime
             IReadOnlyCollection<long>? exactPathIds = null,
             Dictionary<string, long>? phases = null,
             Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null)
+            Action? showCurrentOptions = null,
+            IProgress<int>[]? progressOverride = null,
+            IAssetStudioStatusSink? statusSink = null)
         {
             phases ??= new Dictionary<string, long>();
             metrics ??= new Dictionary<string, long>();
@@ -212,8 +220,8 @@ namespace AssetStudioCore.Runtime
             {
                 studioEngine.UseOptions(runtimeOptions);
             }
-            using var progressScope = showCurrentOptions != null
-                ? AssetStudioProcessState.EnterConsoleProgress()
+            using var progressScope = progressOverride != null
+                ? AssetStudioProcessState.EnterProgress(progressOverride, statusSink)
                 : AssetStudioProcessState.EnterCoreProgress(progressSink);
             if (showCurrentOptions != null)
             {
@@ -332,11 +340,4 @@ namespace AssetStudioCore.Runtime
         }
     }
 
-    internal sealed class AssetStudioConsoleProgressAdapter : IProgress<int>
-    {
-        public void Report(int value)
-        {
-            Console.Write($"[{value:000}%]\r");
-        }
-    }
 }
