@@ -1416,7 +1416,10 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchSignature(request->Items, request->Count);
-                var result = context.TryGetPendingReadBatch(signature, out var cachedResult)
+                // Single-read protocol: reuse the payload bytes captured by size_v1 when
+                // available, otherwise capture once here. The packed payload block is then
+                // reproduced by memcpy — objects are never read (or decoded) a second time.
+                var result = context.TryGetPendingReadBatch(signature, out var cachedResult) && cachedResult.HasCapturedPayloads
                     ? cachedResult
                     : BuildObjectReadBatch(context, request->Items, request->Count, capturePayloads: true);
                 response->ContextId = request->ContextId;
@@ -1426,7 +1429,6 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
                     || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
@@ -1435,6 +1437,7 @@ public static unsafe class NativeExports
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1445,10 +1448,7 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
-                }
+                WriteObjectReadBatchPayloadInto(result.Reads, request->Payload, result.PayloadLen);
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1456,6 +1456,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 context.ClearPendingReadBatch(signature);
                 Diagnostics.Event(context.OperationId, "context_read_objects_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
@@ -1493,8 +1494,10 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchByIndexSignature(request->Items, request->Count);
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Capture payload bytes so the following into_v1 call can memcpy them
+                // instead of re-reading (and re-decoding) every object. Mirrors the
+                // path-id size_v1 behavior.
+                var result = BuildObjectReadBatchByIndex(context, request->Items, request->Count, capturePayloads: true);
                 if (ShouldCacheObjectReadBatch(result))
                 {
                     context.SetPendingReadBatch(signature, result);
@@ -1552,7 +1555,8 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchByIndexSignature(request->Items, request->Count);
-                var result = context.TryGetPendingReadBatch(signature, out var cachedResult)
+                // Single-read protocol: see ContextReadObjectsIntoV1.
+                var result = context.TryGetPendingReadBatch(signature, out var cachedResult) && cachedResult.HasCapturedPayloads
                     ? cachedResult
                     : BuildObjectReadBatchByIndex(context, request->Items, request->Count, capturePayloads: true);
                 response->ContextId = request->ContextId;
@@ -1562,7 +1566,6 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
                     || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
@@ -1571,6 +1574,7 @@ public static unsafe class NativeExports
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1581,10 +1585,7 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
-                }
+                WriteObjectReadBatchPayloadInto(result.Reads, request->Payload, result.PayloadLen);
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1592,6 +1593,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 context.ClearPendingReadBatch(signature);
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
@@ -1628,8 +1630,12 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: payload bytes stream straight into the caller buffer while
+                // they fit. On overflow the stream keeps counting so the exact required
+                // sizes are still reported with BUFFER_TOO_SMALL; caller buffer contents
+                // are unspecified in that case.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: false);
+                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
                 response->ContextId = request->ContextId;
                 response->RequestedCount = request->Count;
                 response->ReturnedCount = result.Reads.Count;
@@ -1637,15 +1643,15 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
-                    || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
+                    || payloadStream.Overflowed)
                 {
                     response->Status = 8;
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1656,10 +1662,6 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
-                }
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1667,6 +1669,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 Diagnostics.Event(context.OperationId, "context_read_objects_direct_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
             }
@@ -1702,8 +1705,9 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: see ContextReadObjectsDirectIntoV1.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: false);
+                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
                 response->ContextId = request->ContextId;
                 response->RequestedCount = request->Count;
                 response->ReturnedCount = result.Reads.Count;
@@ -1711,15 +1715,15 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
-                    || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
+                    || payloadStream.Overflowed)
                 {
                     response->Status = 8;
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1730,10 +1734,6 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
-                }
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1741,6 +1741,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_direct_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
             }
@@ -1779,8 +1780,11 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: payload bytes stream straight into the caller buffer and
+                // spill into a native buffer on overflow, so objects are read (and
+                // textures decoded) exactly once.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: true);
+                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
                 var rc = WriteObjectReadBatchRetryResultV1(
                     result,
                     request->ContextId,
@@ -1788,10 +1792,9 @@ public static unsafe class NativeExports
                     request->ItemsBuffer,
                     request->ItemsBufferLen,
                     request->Payload,
-                    request->PayloadLen,
+                    payloadStream,
                     stopwatch,
-                    response,
-                    payloadStream => BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream));
+                    response);
                 Diagnostics.Event(context.OperationId, "context_read_objects_direct_retry_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen} handle={response->ResultHandle}");
                 return rc;
             }
@@ -1830,8 +1833,9 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: see ContextReadObjectsDirectRetryV1.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: true);
+                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
                 var rc = WriteObjectReadBatchRetryResultV1(
                     result,
                     request->ContextId,
@@ -1839,10 +1843,9 @@ public static unsafe class NativeExports
                     request->ItemsBuffer,
                     request->ItemsBufferLen,
                     request->Payload,
-                    request->PayloadLen,
+                    payloadStream,
                     stopwatch,
-                    response,
-                    payloadStream => BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream));
+                    response);
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_direct_retry_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen} handle={response->ResultHandle}");
                 return rc;
             }
@@ -2062,10 +2065,9 @@ public static unsafe class NativeExports
         byte* callerItemsBuffer,
         long callerItemsBufferLen,
         byte* callerPayload,
-        long callerPayloadLen,
+        NativeOptimisticPayloadStream payload,
         Stopwatch stopwatch,
-        NativeObjectReadBatchRetryResponseV1* response,
-        Func<Stream, NativeObjectReadBatchBuildResult>? streamPayloads = null)
+        NativeObjectReadBatchRetryResponseV1* response)
     {
         const int NativeItemsOwnership = 1;
         const int NativePayloadOwnership = 2;
@@ -2077,16 +2079,15 @@ public static unsafe class NativeExports
         response->RequiredItemsBufferLen = result.ItemsBufferLen;
         response->RequiredStringDataLen = result.StringDataLen;
         response->RequiredPayloadLen = result.PayloadLen;
-        response->DurationMs = stopwatch.ElapsedMilliseconds;
 
+        // The payload was already written by the single read pass — either fully into
+        // the caller buffer or spilled into a native buffer the stream owns.
         var useNativeItemsBuffer = result.ItemsBufferLen > 0 && (callerItemsBuffer == null || callerItemsBufferLen < result.ItemsBufferLen);
-        var useNativePayload = result.PayloadLen > 0 && (callerPayload == null || callerPayloadLen < result.PayloadLen);
+        var useNativePayload = payload.UsedNativeBuffer;
         byte* itemsBuffer = useNativeItemsBuffer
             ? (byte*)NativeMemory.AllocZeroed((nuint)result.ItemsBufferLen)
             : callerItemsBuffer;
-        byte* payload = useNativePayload
-            ? (byte*)NativeMemory.Alloc((nuint)result.PayloadLen)
-            : callerPayload;
+        byte* nativePayload = null;
         var registered = false;
 
         try
@@ -2098,34 +2099,22 @@ public static unsafe class NativeExports
                 out response->Items,
                 out response->StringData,
                 out response->StringDataLen);
-            if (streamPayloads == null)
-            {
-                WriteObjectReadBatchPayloadInto(result.Reads, payload, result.PayloadLen);
-            }
-            else
-            {
-                using var payloadStream = new NativeBufferWriteStream(payload, result.PayloadLen);
-                result = streamPayloads(payloadStream);
-                response->ReturnedCount = result.Reads.Count;
-                response->FailedCount = result.FailedCount;
-                response->RequiredItemsBufferLen = result.ItemsBufferLen;
-                response->RequiredStringDataLen = result.StringDataLen;
-                response->RequiredPayloadLen = result.PayloadLen;
-            }
+            nativePayload = useNativePayload ? payload.Detach() : null;
 
             response->ItemsBuffer = itemsBuffer;
             response->ItemsBufferLen = result.ItemsBufferLen;
-            response->Payload = payload;
+            response->Payload = useNativePayload ? nativePayload : callerPayload;
             response->PayloadLen = result.PayloadLen;
             response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, requestedCount);
             response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, requestedCount);
             response->OwnershipFlags = (useNativeItemsBuffer ? NativeItemsOwnership : 0) | (useNativePayload ? NativePayloadOwnership : 0);
+            response->DurationMs = stopwatch.ElapsedMilliseconds;
             if (response->OwnershipFlags != 0)
             {
                 response->ResultHandle = RegisterResultArena(
                     contextId,
-                    useNativeItemsBuffer ? response->ItemsBuffer : null,
-                    useNativePayload ? response->Payload : null);
+                    useNativeItemsBuffer ? itemsBuffer : null,
+                    useNativePayload ? nativePayload : null);
                 registered = true;
             }
 
@@ -2139,9 +2128,23 @@ public static unsafe class NativeExports
                 {
                     NativeMemory.Free(itemsBuffer);
                 }
-                if (useNativePayload && payload != null)
+                if (nativePayload != null)
                 {
-                    NativeMemory.Free(payload);
+                    NativeMemory.Free(nativePayload);
+                }
+                if (useNativeItemsBuffer || nativePayload != null)
+                {
+                    // Never leave freed native pointers visible to the caller after an
+                    // exception between response assembly and arena registration.
+                    response->Items = null;
+                    response->StringData = null;
+                    response->StringDataLen = 0;
+                    response->ItemsBuffer = null;
+                    response->ItemsBufferLen = 0;
+                    response->Payload = null;
+                    response->PayloadLen = 0;
+                    response->OwnershipFlags = 0;
+                    response->ResultHandle = 0;
                 }
             }
         }
@@ -2247,6 +2250,7 @@ public static unsafe class NativeExports
         int count,
         bool includePayloads)
     {
+        var hasCapturedPayloads = includePayloads;
         var nativeReads = parsed.Reads;
         nativeReads.AddRange(batch.Reads.Select(read =>
         {
@@ -2276,7 +2280,8 @@ public static unsafe class NativeExports
             batch.FailedCount + (count - parsed.Options.Count),
             itemsBufferLen,
             stringDataLen,
-            batch.PayloadLen);
+            batch.PayloadLen,
+            hasCapturedPayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatch(
@@ -2287,7 +2292,7 @@ public static unsafe class NativeExports
     {
         var parsed = ParseObjectReadBatchItems(items, count, "context_read_objects_batch");
         var batch = context.Session.ReadObjectsBatch(parsed.Options, capturePayloads);
-        return FinishObjectReadBatch(batch, parsed, count, includePayloads: true);
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: capturePayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatchByIndex(
@@ -2298,7 +2303,7 @@ public static unsafe class NativeExports
     {
         var parsed = ParseObjectReadBatchItemsByIndex(items, count, "context_read_objects_by_index_batch");
         var batch = context.Session.ReadObjectsBatch(parsed.Options, capturePayloads);
-        return FinishObjectReadBatch(batch, parsed, count, includePayloads: true);
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: capturePayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatchInto(
@@ -2567,19 +2572,20 @@ public static unsafe class NativeExports
         {
             throw new ArgumentException("object read batch v1 payload buffer is null but payload is non-empty");
         }
-        if (payloadLen > int.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch v1 payload is too large to address as one native buffer");
-        }
 
-        var span = new Span<byte>(payload, (int)payloadLen);
+        // Copy per read at its own offset so the total payload block is not limited to
+        // a single int-addressed span (individual captured arrays are always < 2 GiB).
         foreach (var read in reads)
         {
             if (read.Payload == null || read.Payload.Length == 0)
             {
                 continue;
             }
-            read.Payload.CopyTo(span.Slice((int)read.PayloadOffset, read.Payload.Length));
+            if (read.PayloadOffset < 0 || read.PayloadOffset > payloadLen - read.Payload.Length)
+            {
+                throw new InvalidOperationException("object read batch v1 payload region is out of bounds");
+            }
+            read.Payload.CopyTo(new Span<byte>(payload + read.PayloadOffset, read.Payload.Length));
         }
     }
 
@@ -4166,13 +4172,15 @@ internal sealed class NativeObjectReadBatchBuildResult
         int failedCount,
         long itemsBufferLen,
         int stringDataLen,
-        long payloadLen)
+        long payloadLen,
+        bool hasCapturedPayloads)
     {
         Reads = reads;
         FailedCount = failedCount;
         ItemsBufferLen = itemsBufferLen;
         StringDataLen = stringDataLen;
         PayloadLen = payloadLen;
+        HasCapturedPayloads = hasCapturedPayloads;
     }
 
     public IReadOnlyList<NativeObjectReadItemBuildResult> Reads { get; }
@@ -4180,6 +4188,13 @@ internal sealed class NativeObjectReadBatchBuildResult
     public long ItemsBufferLen { get; }
     public int StringDataLen { get; }
     public long PayloadLen { get; }
+
+    /// <summary>
+    /// True when <see cref="NativeObjectReadItemBuildResult.Payload"/> holds the payload
+    /// bytes for every successful read, so the packed payload block can be reproduced by
+    /// memcpy without re-reading (and re-decoding) the objects.
+    /// </summary>
+    public bool HasCapturedPayloads { get; }
 }
 
 internal sealed class NativeObjectTableBuildResult
@@ -4572,47 +4587,76 @@ internal sealed unsafe class NativeResultArena : IDisposable
     }
 }
 
-internal sealed class CountingWriteStream : Stream
+/// <summary>
+/// Streams payload bytes straight into the caller-provided buffer while they fit.
+/// On overflow it either spills to an owned native buffer (retry paths: the data is
+/// still needed) or degrades to counting only (direct into paths: the call will
+/// return BUFFER_TOO_SMALL, only the required sizes matter). <see cref="Length"/>
+/// always reflects the full logical payload size, so per-item measurements taken
+/// from stream position deltas stay correct after an overflow.
+/// </summary>
+internal sealed unsafe class NativeOptimisticPayloadStream : Stream
 {
-    public long BytesWritten { get; private set; }
+    private enum WriteMode
+    {
+        CallerBuffer,
+        NativeSpill,
+        CountOnly,
+    }
+
+    private readonly byte* callerBuffer;
+    private readonly long callerCapacity;
+    private readonly bool spillToNativeOnOverflow;
+    private byte* ownedPointer;
+    private long ownedCapacity;
+    private long length;
+    private WriteMode mode = WriteMode.CallerBuffer;
+
+    public NativeOptimisticPayloadStream(byte* callerBuffer, long callerCapacity, bool spillToNativeOnOverflow)
+    {
+        this.callerBuffer = callerBuffer;
+        this.callerCapacity = callerBuffer == null ? 0 : Math.Max(0, callerCapacity);
+        this.spillToNativeOnOverflow = spillToNativeOnOverflow;
+    }
+
+    /// <summary>True when the payload did not fit in the caller buffer.</summary>
+    public bool Overflowed => mode != WriteMode.CallerBuffer;
+
+    /// <summary>True when the payload lives in an owned native buffer (retry spill).</summary>
+    public bool UsedNativeBuffer => mode == WriteMode.NativeSpill;
+
     public override bool CanRead => false;
     public override bool CanSeek => false;
     public override bool CanWrite => true;
-    public override long Length => BytesWritten;
+    public override long Length => length;
     public override long Position
     {
-        get => BytesWritten;
+        get => length;
         set => throw new NotSupportedException();
     }
-    public override void Flush() { }
-    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-    public override void SetLength(long value) => throw new NotSupportedException();
-    public override void Write(byte[] buffer, int offset, int count) => BytesWritten += count;
-    public override void Write(ReadOnlySpan<byte> buffer) => BytesWritten += buffer.Length;
-}
 
-internal sealed unsafe class NativeBufferWriteStream : Stream
-{
-    private readonly byte* buffer;
-    private readonly long capacity;
-    private long position;
-
-    public NativeBufferWriteStream(byte* buffer, long capacity)
+    /// <summary>
+    /// Transfers ownership of the spilled native buffer to the caller, first shrinking
+    /// the doubling-grown allocation back to the exact payload length so the result
+    /// arena does not retain over-allocated capacity.
+    /// </summary>
+    public byte* Detach()
     {
-        this.buffer = buffer;
-        this.capacity = capacity;
+        if (ownedPointer != null && length > 0 && length < ownedCapacity)
+        {
+            var trimmed = (byte*)NativeMemory.Realloc(ownedPointer, (nuint)length);
+            if (trimmed != null)
+            {
+                ownedPointer = trimmed;
+                ownedCapacity = length;
+            }
+        }
+        var detached = ownedPointer;
+        ownedPointer = null;
+        ownedCapacity = 0;
+        return detached;
     }
 
-    public override bool CanRead => false;
-    public override bool CanSeek => false;
-    public override bool CanWrite => true;
-    public override long Length => position;
-    public override long Position
-    {
-        get => position;
-        set => throw new NotSupportedException();
-    }
     public override void Flush() { }
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
@@ -4629,12 +4673,84 @@ internal sealed unsafe class NativeBufferWriteStream : Stream
         {
             return;
         }
-        if (buffer == null || position > capacity - source.Length)
+
+        switch (mode)
         {
-            throw new InvalidOperationException("native payload buffer is too small");
+            case WriteMode.CallerBuffer when callerBuffer != null && length + source.Length <= callerCapacity:
+                source.CopyTo(new Span<byte>(callerBuffer + length, source.Length));
+                length += source.Length;
+                return;
+            case WriteMode.CallerBuffer when spillToNativeOnOverflow:
+                // First write that no longer fits: move what the caller buffer already
+                // holds into an owned native buffer and continue there.
+                EnsureOwnedCapacity(length + source.Length);
+                if (length > 0)
+                {
+                    Buffer.MemoryCopy(callerBuffer, ownedPointer, ownedCapacity, length);
+                }
+                mode = WriteMode.NativeSpill;
+                source.CopyTo(new Span<byte>(ownedPointer + length, source.Length));
+                length += source.Length;
+                return;
+            case WriteMode.CallerBuffer:
+                mode = WriteMode.CountOnly;
+                length += source.Length;
+                return;
+            case WriteMode.NativeSpill:
+                EnsureOwnedCapacity(length + source.Length);
+                source.CopyTo(new Span<byte>(ownedPointer + length, source.Length));
+                length += source.Length;
+                return;
+            default:
+                length += source.Length;
+                return;
         }
-        source.CopyTo(new Span<byte>(buffer + position, source.Length));
-        position += source.Length;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (ownedPointer != null)
+        {
+            NativeMemory.Free(ownedPointer);
+            ownedPointer = null;
+            ownedCapacity = 0;
+        }
+        base.Dispose(disposing);
+    }
+
+    private void EnsureOwnedCapacity(long required)
+    {
+        if (required <= ownedCapacity)
+        {
+            return;
+        }
+
+        var next = ownedCapacity <= 0 ? Math.Max(64 * 1024L, callerCapacity) : ownedCapacity;
+        while (next < required)
+        {
+            if (next > long.MaxValue / 2)
+            {
+                next = required;
+                break;
+            }
+            next *= 2;
+        }
+
+        if ((ulong)next > nuint.MaxValue)
+        {
+            throw new InvalidOperationException("object read batch payload is too large to allocate as one native buffer");
+        }
+
+        var nextPointer = ownedPointer == null
+            ? (byte*)NativeMemory.Alloc((nuint)next)
+            : (byte*)NativeMemory.Realloc(ownedPointer, (nuint)next);
+        if (nextPointer == null)
+        {
+            throw new OutOfMemoryException($"failed to allocate {next} bytes for object read batch payload");
+        }
+
+        ownedPointer = nextPointer;
+        ownedCapacity = next;
     }
 }
 
@@ -4702,92 +4818,6 @@ internal sealed unsafe class NativePayloadAppendStream : Stream
             length = 0;
         }
         base.Dispose(disposing);
-    }
-
-    private void EnsureCapacity(long required)
-    {
-        if (required <= capacity)
-        {
-            return;
-        }
-
-        var next = capacity <= 0 ? 64 * 1024L : capacity;
-        while (next < required)
-        {
-            if (next > long.MaxValue / 2)
-            {
-                next = required;
-                break;
-            }
-            next *= 2;
-        }
-
-        if ((ulong)next > nuint.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch payload is too large to allocate as one native buffer");
-        }
-
-        var nextPointer = pointer == null
-            ? (byte*)NativeMemory.Alloc((nuint)next)
-            : (byte*)NativeMemory.Realloc(pointer, (nuint)next);
-        if (nextPointer == null)
-        {
-            throw new OutOfMemoryException($"failed to allocate {next} bytes for object read batch payload");
-        }
-
-        pointer = nextPointer;
-        capacity = next;
-    }
-}
-
-internal unsafe struct NativePayloadAppendBuffer : IDisposable
-{
-    private byte* pointer;
-    private long capacity;
-
-    public long Length { get; private set; }
-
-    public void Reserve(long capacity)
-    {
-        if (capacity <= 0)
-        {
-            return;
-        }
-        EnsureCapacity(capacity);
-    }
-
-    public void Append(byte[] payload)
-    {
-        if (payload.Length == 0)
-        {
-            return;
-        }
-
-        EnsureCapacity(Length + payload.Length);
-        fixed (byte* source = payload)
-        {
-            Buffer.MemoryCopy(source, pointer + Length, capacity - Length, payload.Length);
-        }
-        Length += payload.Length;
-    }
-
-    public byte* Detach()
-    {
-        var detached = pointer;
-        pointer = null;
-        capacity = 0;
-        return detached;
-    }
-
-    public void Dispose()
-    {
-        if (pointer != null)
-        {
-            NativeMemory.Free(pointer);
-            pointer = null;
-            capacity = 0;
-            Length = 0;
-        }
     }
 
     private void EnsureCapacity(long required)

@@ -186,12 +186,19 @@ namespace AssetStudioCore
                 throw new ArgumentNullException(nameof(writer));
             }
 
+            // Item offsets and lengths are derived from ACTUAL stream positions, not
+            // from the per-kind writers' recorded lengths. A writer that leaves extra
+            // bytes on the stream (e.g. a typetree serializer that flushes partial JSON
+            // before its raw-bytes fallback) is reported as a failed item instead of
+            // silently shifting every following payload region.
+            var payloadStream = writer.PayloadStream;
+            var batchStart = payloadStream.Position;
             var reads = new List<AssetStudioObjectReadBatchItemResult>(options.Count);
             var failedCount = 0;
-            long payloadOffset = 0;
             for (var i = 0; i < options.Count; i++)
             {
                 var option = options[i];
+                var itemStart = payloadStream.Position;
                 try
                 {
                     var item = FindObject(option);
@@ -202,7 +209,13 @@ namespace AssetStudioCore
                             : $"asset path_id {option.PathId} was not found in the active context");
                     }
 
-                    var payload = ReadObjectPayloadInto(item, option, writer.PayloadStream);
+                    var payload = ReadObjectPayloadInto(item, option, payloadStream);
+                    var actualLen = payloadStream.Position - itemStart;
+                    if (actualLen != payload.PayloadLen)
+                    {
+                        throw new InvalidOperationException(
+                            $"payload writer for path_id {item.m_PathID} wrote {actualLen} bytes but recorded {payload.PayloadLen}");
+                    }
                     reads.Add(new AssetStudioObjectReadBatchItemResult
                     {
                         Index = i,
@@ -215,11 +228,10 @@ namespace AssetStudioCore
                         PayloadKind = payload.PayloadKind,
                         SuggestedExtension = payload.SuggestedExtension,
                         Payload = null,
-                        PayloadOffset = payloadOffset,
+                        PayloadOffset = itemStart - batchStart,
                         PayloadLen = payload.PayloadLen,
                         StreamingTier = payload.StreamingTier,
                     });
-                    payloadOffset = checked(payloadOffset + payload.PayloadLen);
                 }
                 catch (Exception ex)
                 {
@@ -232,6 +244,10 @@ namespace AssetStudioCore
                         ErrorKind = errorKind,
                         PathId = option.PathId,
                         ErrorMessage = ex.Message,
+                        // Attribute any bytes the failed writer left behind to this item
+                        // so the following items' regions stay aligned.
+                        PayloadOffset = itemStart - batchStart,
+                        PayloadLen = payloadStream.Position - itemStart,
                     });
                 }
             }
@@ -240,7 +256,7 @@ namespace AssetStudioCore
             {
                 Reads = reads,
                 FailedCount = failedCount,
-                PayloadLen = payloadOffset,
+                PayloadLen = payloadStream.Position - batchStart,
             };
         }
 
@@ -1188,36 +1204,45 @@ namespace AssetStudioCore
         {
             EnsureRawRgbaImageFormat(options.ImageFormat);
 
-            var payloadLen = ImageSharpNativeAotGuard.Run(() =>
+            // Decode each layer exactly once. The bundle header needs every entry
+            // length up front, so decoded layers are held (pooled buffers) until the
+            // header is written; the IR length is deterministic after a successful
+            // decode, so no counting pass is required.
+            var textures = GetTextureArrayLayers(textureArray);
+            var decodedLayers = new List<(string Name, DecodedBgra32 Decoded)>();
+            long payloadLen;
+            try
             {
-                var textures = GetTextureArrayLayers(textureArray);
-                var entries = new List<(int Layer, string Name, long PayloadLen)>();
                 for (var layer = 0; layer < textures.Count; layer++)
                 {
-                    using var image = textures[layer].ConvertToImage(flip: true);
-                    if (image == null)
+                    var decoded = textures[layer].DecodeBgra32();
+                    if (decoded == null)
                     {
                         continue;
                     }
-                    var counter = new CountingStream();
-                    image.WriteRgbaIrToStream(counter);
-                    entries.Add((layer, $"layer_{layer:D4}.rgba", counter.BytesWritten));
+                    decodedLayers.Add(($"layer_{layer:D4}.rgba", decoded));
                 }
 
-                return WriteAndMeasure(destination, () =>
+                payloadLen = WriteAndMeasure(destination, () =>
                 {
-                    WritePayloadBundleHeader(destination, entries.Select(entry => (entry.Name, entry.PayloadLen)).ToArray());
-                    foreach (var entry in entries)
+                    WritePayloadBundleHeader(
+                        destination,
+                        decodedLayers
+                            .Select(entry => (entry.Name, Texture2DExtensions.RgbaIrPayloadLength(entry.Decoded.Width, entry.Decoded.Height)))
+                            .ToArray());
+                    foreach (var entry in decodedLayers)
                     {
-                        using var image = textures[entry.Layer].ConvertToImage(flip: true);
-                        if (image == null)
-                        {
-                            continue;
-                        }
-                        image.WriteRgbaIrToStream(destination);
+                        Texture2DExtensions.WriteRgbaIr(destination, entry.Decoded);
                     }
                 });
-            });
+            }
+            finally
+            {
+                foreach (var entry in decodedLayers)
+                {
+                    entry.Decoded.Dispose();
+                }
+            }
             return new AssetStudioObjectStreamPayload(
                 payloadLen,
                 "image_array_bundle_raw_rgba",
@@ -1243,15 +1268,16 @@ namespace AssetStudioCore
         private static AssetStudioObjectStreamPayload ReadTexturePayloadInto(Texture2D texture, AssetStudioObjectReadOptions options, Stream destination)
         {
             EnsureRawRgbaImageFormat(options.ImageFormat);
-            var payloadLen = ImageSharpNativeAotGuard.Run(() =>
+            // Direct span path: decode once into a pooled BGRA buffer and stream the
+            // flipped/swizzled RGBA IR straight to the destination. No ImageSharp, no
+            // process-wide image guard.
+            long payloadLen;
+            using (var decoded = texture.DecodeBgra32())
             {
-                using var image = texture.ConvertToImage(flip: true);
-                if (image == null)
-                {
-                    return 0L;
-                }
-                return WriteAndMeasure(destination, () => image.WriteRgbaIrToStream(destination));
-            });
+                payloadLen = decoded == null
+                    ? 0L
+                    : WriteAndMeasure(destination, () => Texture2DExtensions.WriteRgbaIr(destination, decoded));
+            }
             return new AssetStudioObjectStreamPayload(
                 payloadLen,
                 "image_raw_rgba",
@@ -1615,31 +1641,6 @@ namespace AssetStudioCore
             {
                 throw new ObjectDisposedException(nameof(AssetStudioSession));
             }
-        }
-
-        private sealed class CountingStream : Stream
-        {
-            public long BytesWritten { get; private set; }
-
-            public override bool CanRead => false;
-            public override bool CanSeek => false;
-            public override bool CanWrite => true;
-            public override long Length => BytesWritten;
-            public override long Position
-            {
-                get => BytesWritten;
-                set => throw new NotSupportedException();
-            }
-
-            public override void Flush()
-            {
-            }
-
-            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-            public override void SetLength(long value) => throw new NotSupportedException();
-            public override void Write(byte[] buffer, int offset, int count) => BytesWritten += count;
-            public override void Write(ReadOnlySpan<byte> buffer) => BytesWritten += buffer.Length;
         }
     }
 }
