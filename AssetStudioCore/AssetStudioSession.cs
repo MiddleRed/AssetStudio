@@ -39,14 +39,7 @@ namespace AssetStudioCore
 
         public AssetStudioInspectResult InspectResult { get; private set; }
 
-        public int ObjectCount => objectList.Count;
-
         public int ObjectIndexCount => pathIdIndex.Count;
-
-        public IReadOnlyCollection<AssetStudioAssetInfo> ListObjects(int offset = 0, int limit = 0)
-        {
-            return ListObjects(new AssetStudioObjectListOptions { Offset = offset, Limit = limit });
-        }
 
         public AssetStudioAssetInfo[] ListObjects(AssetStudioObjectListOptions options)
         {
@@ -106,12 +99,6 @@ namespace AssetStudioCore
                 total += item.FullSize;
             }
             return total;
-        }
-
-        public IReadOnlyCollection<AssetStudioObjectReadResult> ReadObjects(IEnumerable<AssetStudioObjectReadOptions> options)
-        {
-            ThrowIfDisposed();
-            return options.Select(ReadObject).ToArray();
         }
 
         public AssetStudioObjectReadBatchResult ReadObjectsBatch(
@@ -258,19 +245,6 @@ namespace AssetStudioCore
                 FailedCount = failedCount,
                 PayloadLen = payloadStream.Position - batchStart,
             };
-        }
-
-        internal AssetStudioRunResult ExportCurrent(
-            AssetStudioRuntimeOptions.RuntimeOptionsState? runtimeOptions = null,
-            IReadOnlyCollection<long>? exactPathIds = null,
-            Dictionary<string, long>? phases = null,
-            Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null,
-            IProgress<int>[]? progressOverride = null,
-            IAssetStudioStatusSink? statusSink = null)
-        {
-            ThrowIfDisposed();
-            return engine.ExportCurrent(runtimeOptions, exactPathIds, phases, metrics, showCurrentOptions, progressOverride, statusSink);
         }
 
         public static AssetStudioSession Open(AssetStudioInspectOptions options)
@@ -1483,16 +1457,6 @@ namespace AssetStudioCore
         {
             var line = string.Format(CultureInfo.InvariantCulture, format, args).Replace("NaN", "0", StringComparison.Ordinal);
             writer.WriteLine(line);
-        }
-
-        private static long WriteUtf8String(Stream destination, string value)
-        {
-            return WriteAndMeasure(destination, () =>
-            {
-                using var writer = new StreamWriter(destination, Utf8NoBom, 8192, leaveOpen: true);
-                writer.Write(value);
-                writer.Flush();
-            });
         }
 
         private static AssetStudioObjectPayload ReadPayloadViaWriter(

@@ -188,8 +188,8 @@ namespace AssetStudio
                 reader.AlignStream();
         }
 
-        [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Legacy export compatibility only; NativeAOT FFI object reads use AssetStudioCliRunner's hand-written TypeTree JSON writer.")]
-        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Legacy export compatibility only; NativeAOT FFI object reads use AssetStudioCliRunner's hand-written TypeTree JSON writer.")]
+        [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Legacy export compatibility only; NativeAOT FFI object reads use AssetStudioCore's hand-written TypeTree JSON writer (AssetStudioSession.WriteTypeTreeJsonPayload).")]
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Legacy export compatibility only; NativeAOT FFI object reads use AssetStudioCore's hand-written TypeTree JSON writer (AssetStudioSession.WriteTypeTreeJsonPayload).")]
         public static byte[] ReadTypeByteArray(TypeTree m_Types, ObjectReader reader)
         {
             var type = ReadType(m_Types, reader);

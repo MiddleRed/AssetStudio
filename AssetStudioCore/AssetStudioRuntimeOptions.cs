@@ -201,11 +201,6 @@ namespace AssetStudioCore.Runtime
             };
         }
 
-        public static void ApplyCoreOptions(AssetStudioCoreOptions options)
-        {
-            Current = CreateFromCoreOptions(options);
-        }
-
         public static RuntimeOptionsState CreateFromCoreOptions(AssetStudioCoreOptions options)
         {
             if (string.IsNullOrWhiteSpace(options.InputPath))

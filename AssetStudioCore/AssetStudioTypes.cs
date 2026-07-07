@@ -52,20 +52,6 @@ namespace AssetStudioCore
         public IAssetStudioProgressSink? ProgressSink { get; set; }
     }
 
-    public sealed class AssetStudioLoadOptions : AssetStudioCoreOptions
-    {
-    }
-
-    public sealed class AssetStudioExportOptions : AssetStudioCoreOptions
-    {
-    }
-
-    public sealed class AssetStudioLoadedSession
-    {
-        public bool Loaded { get; set; }
-        public AssetStudioInspectResult InspectResult { get; set; } = new AssetStudioInspectResult();
-    }
-
     public sealed class AssetStudioRunResult
     {
         public IReadOnlyDictionary<string, long> PhaseMs { get; set; } = new Dictionary<string, long>();
@@ -77,7 +63,7 @@ namespace AssetStudioCore
         public long PathId { get; set; }
         public int ObjectIndex { get; set; } = -1;
         public string Kind { get; set; } = "auto";
-        public string ImageFormat { get; set; } = "bmp";
+        public string ImageFormat { get; set; } = "raw_rgba";
     }
 
     public sealed class AssetStudioObjectReadResult

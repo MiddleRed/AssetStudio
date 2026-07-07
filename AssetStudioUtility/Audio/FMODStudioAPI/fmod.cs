@@ -3363,7 +3363,17 @@ namespace FMOD
         }
         public RESULT setParameterData(int index, byte[] data)
         {
-            return FMOD5_DSP_SetParameterData(this.handle, index, Marshal.UnsafeAddrOfPinnedArrayElement(data, 0), (uint)data.Length);
+            // The array must be pinned for the duration of the native call;
+            // UnsafeAddrOfPinnedArrayElement alone does not pin managed memory.
+            var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+            try
+            {
+                return FMOD5_DSP_SetParameterData(this.handle, index, handle.AddrOfPinnedObject(), (uint)data.Length);
+            }
+            finally
+            {
+                handle.Free();
+            }
         }
         public RESULT getParameterFloat(int index, out float value)
         {

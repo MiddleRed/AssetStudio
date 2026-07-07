@@ -1081,7 +1081,7 @@ public static unsafe class NativeExports
             try
             {
                 var kind = ReadNativeUtf8(request->KindUtf8, request->KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(request->ImageFormatUtf8, request->ImageFormatUtf8Len, defaultValue: "bmp");
+                var imageFormat = ReadNativeUtf8(request->ImageFormatUtf8, request->ImageFormatUtf8Len, defaultValue: "raw_rgba");
                 var result = context.Session.ReadObject(new AssetStudioObjectReadOptions
                 {
                     PathId = request->PathId,
@@ -2245,7 +2245,7 @@ public static unsafe class NativeExports
             try
             {
                 var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp");
+                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "raw_rgba");
                 parsed.OptionIndexes.Add(i);
                 parsed.Options.Add(new AssetStudioObjectReadOptions
                 {
@@ -2284,7 +2284,7 @@ public static unsafe class NativeExports
                     throw new ArgumentException("object_index cannot be negative");
                 }
                 var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp");
+                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "raw_rgba");
                 parsed.OptionIndexes.Add(i);
                 parsed.Options.Add(new AssetStudioObjectReadOptions
                 {
@@ -2677,11 +2677,6 @@ public static unsafe class NativeExports
         return session.EstimateObjectPayloadCapacity(pathIds);
     }
 
-    private static void RecordElapsed(Dictionary<string, long> phaseMs, string phase, Stopwatch stopwatch)
-    {
-        phaseMs[phase] = stopwatch.ElapsedMilliseconds;
-    }
-
     private static string ClassifyReadError(Exception exception)
     {
         if (exception is NotSupportedException)
@@ -2733,17 +2728,6 @@ public static unsafe class NativeExports
             AssetStudioObjectReadErrorKind.AssetNotFound => NativeObjectReadErrorCode.AssetNotFound,
             AssetStudioObjectReadErrorKind.UnsupportedKind => NativeObjectReadErrorCode.UnsupportedKind,
             _ => NativeObjectReadErrorCode.InternalError,
-        };
-    }
-
-    private static string ToNativeErrorCode(AssetStudioObjectReadErrorKind errorKind)
-    {
-        return errorKind switch
-        {
-            AssetStudioObjectReadErrorKind.InvalidRequest => NativeErrorCodes.InvalidRequest,
-            AssetStudioObjectReadErrorKind.AssetNotFound => NativeErrorCodes.AssetNotFound,
-            AssetStudioObjectReadErrorKind.UnsupportedKind => NativeErrorCodes.UnsupportedKind,
-            _ => NativeErrorCodes.InternalError,
         };
     }
 
@@ -2873,38 +2857,6 @@ public static unsafe class NativeExports
             }
         }
         return (int)total;
-    }
-
-    private static byte* WriteObjectReadBatchPayloadToNative(IEnumerable<NativeObjectReadItemBuildResult> reads, long payloadLen)
-    {
-        if (payloadLen <= 0)
-        {
-            return null;
-        }
-        if (payloadLen > int.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch payload is too large to address as one native buffer");
-        }
-
-        var buffer = (byte*)NativeMemory.Alloc((nuint)payloadLen);
-        try
-        {
-            var span = new Span<byte>(buffer, (int)payloadLen);
-            foreach (var read in reads)
-            {
-                if (read.Payload == null || read.Payload.Length == 0)
-                {
-                    continue;
-                }
-                read.Payload.CopyTo(span.Slice((int)read.PayloadOffset, read.Payload.Length));
-            }
-            return buffer;
-        }
-        catch
-        {
-            NativeMemory.Free(buffer);
-            throw;
-        }
     }
 
     private static IReadOnlyCollection<string>? ParseNativeAssetTypes(byte* value, int byteLength)
@@ -3373,23 +3325,6 @@ public static unsafe class NativeExports
         }
     }
 
-    private static int ObjectIndexCountForContext(long contextId)
-    {
-        if (TryAcquireSession(contextId, out var context) != NativeContextAcquireResult.Acquired || context == null)
-        {
-            return 0;
-        }
-
-        try
-        {
-            return context.Session.ObjectIndexCount;
-        }
-        finally
-        {
-            context.Release();
-        }
-    }
-
     private static long ReadLongEnvironment(string name, long defaultValue)
     {
         var value = Environment.GetEnvironmentVariable(name);
@@ -3401,23 +3336,6 @@ public static unsafe class NativeExports
         return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? Math.Max(0, parsed)
             : defaultValue;
-    }
-
-    private static void CloseAllSessions()
-    {
-        ActiveNativeContext[] contexts;
-        lock (SessionsSync)
-        {
-            contexts = Sessions.Values.ToArray();
-            Sessions.Clear();
-        }
-
-        foreach (var context in contexts)
-        {
-            ReleaseResultArenasForContext(context.ContextId);
-            context.ClearPendingReadBatch();
-            context.Session.Dispose();
-        }
     }
 
     private static void ReleaseResultArenasForContext(long contextId)
@@ -3441,11 +3359,6 @@ public static unsafe class NativeExports
         {
             arena.Dispose();
         }
-    }
-
-    private static string ShellQuote(string value)
-    {
-        return value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
     }
 
     /// <summary>
@@ -4428,23 +4341,6 @@ internal sealed class NativeDiagnostics
     public void Exception(string operationId, Exception exception)
     {
         Event(operationId, "exception", exception.ToString());
-    }
-
-    public IReadOnlyCollection<string> ResponseWarnings(string operationId, params string[] extraWarnings)
-    {
-        var hasDiagnostics = enabled && logPath != null;
-        if (!hasDiagnostics && extraWarnings.Length == 0)
-        {
-            return Array.Empty<string>();
-        }
-
-        var warnings = new List<string>(extraWarnings.Length + (hasDiagnostics ? 1 : 0));
-        if (hasDiagnostics)
-        {
-            warnings.Add($"native diagnostics op={operationId} log={logPath}");
-        }
-        warnings.AddRange(extraWarnings);
-        return warnings;
     }
 
     private void Write(string line)

@@ -16,14 +16,6 @@ namespace AssetStudioCore.Runtime
         string? UnityVersion { get; }
         AssetStudioRuntimeOptions.RuntimeOptionsState Options { get; }
         void LogWarning(string message);
-        AssetStudioRunResult ExportCurrent(
-            AssetStudioRuntimeOptions.RuntimeOptionsState? runtimeOptions = null,
-            IReadOnlyCollection<long>? exactPathIds = null,
-            Dictionary<string, long>? phases = null,
-            Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null,
-            IProgress<int>[]? progressOverride = null,
-            IAssetStudioStatusSink? statusSink = null);
     }
 
     internal static class AssetStudioEngine
@@ -56,7 +48,6 @@ namespace AssetStudioCore.Runtime
     {
         private readonly AssetStudioEngineInstance studioEngine;
         private readonly AssetStudioCoreLogger logger;
-        private readonly IAssetStudioProgressSink? progressSink;
         private readonly IReadOnlyList<AssetItem> parsedAssets;
         private readonly int assetsFileCount;
         private readonly string? unityVersion;
@@ -65,12 +56,10 @@ namespace AssetStudioCore.Runtime
         private AssetStudioEngineContext(
             AssetStudioEngineInstance studioEngine,
             AssetStudioCoreLogger logger,
-            IAssetStudioProgressSink? progressSink,
             bool loaded)
         {
             this.studioEngine = studioEngine;
             this.logger = logger;
-            this.progressSink = progressSink;
             Loaded = loaded;
             parsedAssets = studioEngine.ParsedAssets.ToArray();
             assetsFileCount = studioEngine.AssetsFileCount;
@@ -111,7 +100,7 @@ namespace AssetStudioCore.Runtime
                 {
                     if (!AssetStudioSession.Measure(phases, "load_assets", studioEngine.LoadAssets))
                     {
-                        return new AssetStudioEngineContext(studioEngine, logger, options.ProgressSink, loaded: false);
+                        return new AssetStudioEngineContext(studioEngine, logger, loaded: false);
                     }
 
                     AssetStudioSession.Measure(phases, "parse_assets", studioEngine.ParseAssets);
@@ -120,7 +109,7 @@ namespace AssetStudioCore.Runtime
                         AssetStudioSession.Measure(phases, "filter", studioEngine.Filter);
                     }
 
-                    return new AssetStudioEngineContext(studioEngine, logger, options.ProgressSink, loaded: true);
+                    return new AssetStudioEngineContext(studioEngine, logger, loaded: true);
                 }
                 catch
                 {
@@ -203,37 +192,6 @@ namespace AssetStudioCore.Runtime
             studioEngine.Clear();
             logger.LogToFile(LoggerEvent.Verbose, "---Context ended---");
             ResetProcessLocalState();
-        }
-
-        public AssetStudioRunResult ExportCurrent(
-            AssetStudioRuntimeOptions.RuntimeOptionsState? runtimeOptions = null,
-            IReadOnlyCollection<long>? exactPathIds = null,
-            Dictionary<string, long>? phases = null,
-            Dictionary<string, long>? metrics = null,
-            Action? showCurrentOptions = null,
-            IProgress<int>[]? progressOverride = null,
-            IAssetStudioStatusSink? statusSink = null)
-        {
-            phases ??= new Dictionary<string, long>();
-            metrics ??= new Dictionary<string, long>();
-            if (runtimeOptions != null)
-            {
-                studioEngine.UseOptions(runtimeOptions);
-            }
-            using var progressScope = progressOverride != null
-                ? AssetStudioProcessState.EnterProgress(progressOverride, statusSink)
-                : AssetStudioProcessState.EnterCoreProgress(progressSink);
-            if (showCurrentOptions != null)
-            {
-                AssetStudioSession.Measure(phases, "show_options", showCurrentOptions);
-            }
-            AssetStudioSession.Measure(phases, "exact_path_filter", () => ApplyExactPathIdFilter(studioEngine, exactPathIds));
-            if (studioEngine.Options.ShouldExportAssetList)
-            {
-                AssetStudioSession.Measure(phases, "export_asset_list", studioEngine.ExportAssetList);
-            }
-            ExportCurrentMode(studioEngine, phases, metrics);
-            return new AssetStudioRunResult { PhaseMs = phases, Metrics = metrics };
         }
 
         private static void ExportCurrentMode(AssetStudioEngineInstance studioEngine, Dictionary<string, long> phases, Dictionary<string, long> metrics)
