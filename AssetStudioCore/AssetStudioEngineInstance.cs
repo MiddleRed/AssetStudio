@@ -514,14 +514,7 @@ namespace AssetStudioCore.Runtime
                 info += "\n\nNo exportable assets found.";
             }
 
-            if (options.LogLevel > LoggerEvent.Info)
-            {
-                Console.WriteLine(info);
-            }
-            else
-            {
-                Logger.Info(info);
-            }
+            Logger.Default.Log(LoggerEvent.Info, info, ignoreLevel: true);
         }
 
         public void ExportLive2D()
@@ -580,7 +573,7 @@ namespace AssetStudioCore.Runtime
             var mocPathDict = GenerateMocPathDict(mocDict, searchByFilename);
             if (!searchByFilename && mocPathDict.Count != state.Live2DModelDict.Count)
             {
-                Logger.Warning($"Some Live2D models cannot be exported using containers\nTry to specify \"{"--l2d-search-by-filename".Color(ColorConsole.BrightCyan)}\" flag");
+                Logger.Warning("Some Live2D models cannot be exported using containers\nTry enabling the Live2D search-by-filename option");
             }
 
             if (searchByFilename)
@@ -642,8 +635,7 @@ namespace AssetStudioCore.Runtime
                 l2dContainers.Clear();
             if (mocDict.Keys.First().serializedType?.m_Type == null && !options.HasAssemblyPath)
             {
-                Logger.Warning("Specifying the assembly folder may be needed for proper extraction\n" +
-                               $"Use \"{"--assembly-folder <path>".Color(ColorConsole.BrightCyan)}\" to specify it");
+                Logger.Warning("Specifying the assembly folder may be needed for proper extraction");
             }
             var totalModelCount = assetDict.Count;
             Logger.Info($"Found {totalModelCount} model(s).");
@@ -1017,7 +1009,7 @@ namespace AssetStudioCore.Runtime
                 {
                     exportedCount++;
                 }
-                Console.Write($"Exported [{exportedCount}/{toExportCount}]\r");
+                AssetStudioProcessState.ReportStatus($"Exported [{exportedCount}/{toExportCount}]");
             }
             exporter.ClearHash();
 
@@ -1031,7 +1023,7 @@ namespace AssetStudioCore.Runtime
                     {
                         Interlocked.Increment(ref exportedCount);
                         Logger.Debug(debugLog);
-                        Console.Write($"Exported [{exportedCount}/{toExportCount}]\r");
+                        AssetStudioProcessState.ReportStatus($"Exported [{exportedCount}/{toExportCount}]");
                     }
                 }
                 catch (Exception ex)
@@ -1040,7 +1032,7 @@ namespace AssetStudioCore.Runtime
                 }
             });
             parallelExporter.ClearHash();
-            Console.WriteLine("");
+            AssetStudioProcessState.CompleteStatus();
 
             if (exportedCount == 0)
             {

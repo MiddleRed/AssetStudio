@@ -9,9 +9,9 @@ namespace AssetStudioCLI
 {
     internal static class AssetStudioCliOptionsSnapshot
     {
-        public static AssetStudioCoreCliOptionsSnapshot CreateFromCurrent()
+        public static AssetStudioRuntimeOptionsSnapshot CreateFromCurrent()
         {
-            return new AssetStudioCoreCliOptionsSnapshot
+            return new AssetStudioRuntimeOptionsSnapshot
             {
                 IsParsed = CLIOptions.isParsed,
                 FilterBy = CLIOptions.filterBy,
@@ -38,7 +38,6 @@ namespace AssetStudioCLI
                 AssemblyPath = CLIOptions.o_assemblyPath.Value,
                 ExportAssetTypes = new List<AssetStudio.ClassIDType>(CLIOptions.o_exportAssetTypes.Value),
                 LogOutput = CLIOptions.o_logOutput.Value,
-                CliArgs = CLIOptions.cliArgs ?? Array.Empty<string>(),
                 FilenameFormat = CLIOptions.o_filenameFormat.Value,
                 OverwriteExisting = CLIOptions.f_overwriteExisting.Value,
                 ConvertTexture = CLIOptions.convertTexture,

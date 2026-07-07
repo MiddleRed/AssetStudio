@@ -61,14 +61,125 @@ public static unsafe class NativeExports
     {
         SixLabors.ImageSharp.Configuration.Default.MaxDegreeOfParallelism = 1;
         NativeLibrary.SetDllImportResolver(typeof(TextureDecoder).Assembly, ResolveAssetStudioNativeLibrary);
+        // The resolver is per-assembly. The FBX wrapper (AssetStudioFBXNative) and
+        // the AssetStudio core (ooz, fmod) declare their own DllImports; default
+        // probing does not search this shared library's directory, so without the
+        // resolver those loads fail even when the .so ships right next to us.
+        NativeLibrary.SetDllImportResolver(typeof(AssetStudio.Fbx).Assembly, ResolveAssetStudioNativeLibrary);
+        NativeLibrary.SetDllImportResolver(typeof(AssetStudio.AssetsManager).Assembly, ResolveAssetStudioNativeLibrary);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             Diagnostics.Event("process", "unhandled_exception", args.ExceptionObject?.ToString());
         TaskScheduler.UnobservedTaskException += (_, args) =>
             Diagnostics.Event("process", "unobserved_task_exception", args.Exception.ToString());
+        KeepAotReflectionDependencies();
         Diagnostics.Event(
             "process",
             "native_exports_initialized",
             $"image_guard={AssetStudio.ImageSharpNativeAotGuard.Enabled}");
+    }
+
+    /// <summary>
+    /// Roots type-tree parsed asset types (and their enums) for the ILC trimmer in one
+    /// place. Called from the static constructor, which every export reaches, so the
+    /// attributes no longer need to be repeated on individual entry points.
+    /// </summary>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2D))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2DArray))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.GLTextureSettings))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.StreamingInfo))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.ResourceReader))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Sprite))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.TextAsset))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.MonoBehaviour))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.AudioClip))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.VideoClip))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.MovieTexture))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Font))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Shader))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Mesh))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Animator))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.AnimationClip))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.TextureFormat))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.GraphicsFormat))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.ClassIDType))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.FMODSoundType))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.AudioCompressionFormat))]
+    private static void KeepAotReflectionDependencies()
+    {
+    }
+
+    // Shared fail path: stamps Status/ErrorCode/DurationMs on the typed response and
+    // returns the status so callers can `return Fail(...)` in one line.
+    private static int Fail(NativeContextOpenResponse* response, Stopwatch stopwatch, int status, NativeContextErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeContextCloseResponse* response, Stopwatch stopwatch, int status, NativeContextErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectTable* response, Stopwatch stopwatch, int status, NativeObjectTableErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadResponse* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadBatchResponse* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadBatchResponseV1* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadBatchSizeResponseV1* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadBatchIntoResponseV1* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
+    }
+
+    private static int Fail(NativeObjectReadBatchRetryResponseV1* response, Stopwatch stopwatch, int status, NativeObjectReadErrorCode errorCode)
+    {
+        response->Status = status;
+        response->ErrorCode = errorCode;
+        response->DurationMs = stopwatch.ElapsedMilliseconds;
+        return status;
     }
 
     [UnmanagedCallersOnly(EntryPoint = "haruki_assetstudio_capabilities_v1", CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -181,14 +292,6 @@ public static unsafe class NativeExports
         return 0;
     }
 
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2D))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2DArray))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.GLTextureSettings))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.StreamingInfo))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.ResourceReader))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.TextureFormat))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.GraphicsFormat))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.ClassIDType))]
     [UnmanagedCallersOnly(EntryPoint = "haruki_assetstudio_context_open_v1", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int ContextOpenV1(NativeContextOpenRequest* request, NativeContextOpenResponse* response)
     {
@@ -203,27 +306,18 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeContextErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeContextErrorCode.NullPointer);
             }
 
             if (request->StructSize < sizeof(NativeContextOpenRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeContextErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeContextErrorCode.InvalidRequest);
             }
 
             var inputPath = ReadNativeUtf8(request->InputPathUtf8, request->InputPathUtf8Len, defaultValue: "");
             if (string.IsNullOrWhiteSpace(inputPath))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeContextErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeContextErrorCode.InvalidRequest);
             }
             var unityVersion = ReadNativeUtf8(request->UnityVersionUtf8, request->UnityVersionUtf8Len, defaultValue: "");
             var outputDir = ReadNativeUtf8(request->OutputDirUtf8, request->OutputDirUtf8Len, defaultValue: "");
@@ -232,10 +326,7 @@ public static unsafe class NativeExports
             var operationId = Diagnostics.Begin("context_open_v1", inputPath);
             if (ActiveSessionCount() >= MaxNativeActiveContexts)
             {
-                response->Status = 5;
-                response->ErrorCode = NativeContextErrorCode.ContextLimit;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeContextErrorCode.ContextLimit);
             }
 
             var inspectOptions = new AssetStudioInspectOptions
@@ -254,10 +345,7 @@ public static unsafe class NativeExports
             if (!TryAddSession(new ActiveNativeContext(contextId, operationId, inputPath, stopwatch, assetTypes, session)))
             {
                 session.Dispose();
-                response->Status = 5;
-                response->ErrorCode = NativeContextErrorCode.ContextLimit;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeContextErrorCode.ContextLimit);
             }
 
             response->Status = 0;
@@ -283,19 +371,13 @@ public static unsafe class NativeExports
         {
             Diagnostics.Exception("context_open_v1", ex);
             ResetProcessLocalState();
-            response->Status = 2;
-            response->ErrorCode = NativeContextErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeContextErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_open_v1", ex);
             ResetProcessLocalState();
-            response->Status = 100;
-            response->ErrorCode = NativeContextErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeContextErrorCode.InternalError);
         }
     }
 
@@ -322,27 +404,18 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeContextErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeContextErrorCode.NullPointer);
             }
 
             if (request->StructSize < sizeof(NativeContextCloseRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeContextErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeContextErrorCode.InvalidRequest);
             }
 
             response->ContextId = request->ContextId;
             if (!TryRemoveSession(request->ContextId, out var context))
             {
-                response->Status = 4;
-                response->ErrorCode = NativeContextErrorCode.ContextNotFound;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 4;
+                return Fail(response, stopwatch, 4, NativeContextErrorCode.ContextNotFound);
             }
 
             if (!context.TryBeginClose())
@@ -351,10 +424,7 @@ public static unsafe class NativeExports
                 {
                     Sessions[request->ContextId] = context;
                 }
-                response->Status = 10;
-                response->ErrorCode = NativeContextErrorCode.ContextBusy;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 10;
+                return Fail(response, stopwatch, 10, NativeContextErrorCode.ContextBusy);
             }
 
             var operationId = context.OperationId;
@@ -368,18 +438,12 @@ public static unsafe class NativeExports
                 ReleaseResultArenasForContext(request->ContextId);
             }
             Diagnostics.Event(operationId, "context_closed_v1", $"duration_ms={stopwatch.ElapsedMilliseconds}");
-            response->Status = 0;
-            response->ErrorCode = NativeContextErrorCode.None;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 0;
+            return Fail(response, stopwatch, 0, NativeContextErrorCode.None);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_close_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeContextErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeContextErrorCode.InternalError);
         }
     }
 
@@ -406,34 +470,22 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
             }
 
             if (request->StructSize < sizeof(NativeObjectListRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var acquireResult = TryAcquireSession(request->ContextId, out var context);
             if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
             {
-                response->Status = 4;
-                response->ErrorCode = NativeObjectTableErrorCode.ContextNotFound;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 4;
+                return Fail(response, stopwatch, 4, NativeObjectTableErrorCode.ContextNotFound);
             }
             if (acquireResult == NativeContextAcquireResult.Busy)
             {
-                response->Status = 5;
-                response->ErrorCode = NativeObjectTableErrorCode.ContextBusy;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeObjectTableErrorCode.ContextBusy);
             }
 
             try
@@ -444,10 +496,7 @@ public static unsafe class NativeExports
                 var totalCount = context.Session.CountObjects(requestedAssetTypes);
                 if (!TryNormalizeObjectTableLimit(request->Limit, totalCount, out var limit))
                 {
-                    response->Status = 2;
-                    response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                    response->DurationMs = stopwatch.ElapsedMilliseconds;
-                    return 2;
+                    return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
                 }
                 var page = context.Session.ListObjects(new AssetStudioObjectListOptions
                 {
@@ -488,18 +537,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_list_objects_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_list_objects_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -535,18 +578,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_list_objects_size_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_list_objects_size_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -564,17 +601,11 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
             }
             if (request->StructSize < sizeof(NativeObjectListIntoRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var listRequest = new NativeObjectListRequest
@@ -602,10 +633,7 @@ public static unsafe class NativeExports
 
             if (requiredBufferLength > 0 && (request->Buffer == null || request->BufferLen < requiredBufferLength))
             {
-                response->Status = 8;
-                response->ErrorCode = NativeObjectTableErrorCode.BufferTooSmall;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 8;
+                return Fail(response, stopwatch, 8, NativeObjectTableErrorCode.BufferTooSmall);
             }
 
             WriteObjectTableInto(
@@ -630,18 +658,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_list_objects_into_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_list_objects_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -659,18 +681,12 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
             }
 
             if (request->StructSize < sizeof(NativeObjectLookupRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var status = BuildLookupObjectTable(request, stopwatch, out var table, response, out var lookupKind);
@@ -706,18 +722,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_lookup_objects_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_lookup_objects_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -753,18 +763,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_lookup_objects_size_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_lookup_objects_size_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -782,17 +786,11 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
             }
             if (request->StructSize < sizeof(NativeObjectLookupIntoRequest))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var lookupRequest = new NativeObjectLookupRequest
@@ -824,10 +822,7 @@ public static unsafe class NativeExports
 
             if (requiredBufferLength > 0 && (request->Buffer == null || request->BufferLen < requiredBufferLength))
             {
-                response->Status = 8;
-                response->ErrorCode = NativeObjectTableErrorCode.BufferTooSmall;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 8;
+                return Fail(response, stopwatch, 8, NativeObjectTableErrorCode.BufferTooSmall);
             }
 
             WriteObjectTableInto(
@@ -852,18 +847,12 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_lookup_objects_into_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_lookup_objects_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectTableErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectTableErrorCode.InternalError);
         }
     }
 
@@ -888,34 +877,22 @@ public static unsafe class NativeExports
         table = null;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
         }
 
         if (request->StructSize < sizeof(NativeObjectListRequest))
         {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
 
         var acquireResult = TryAcquireSession(request->ContextId, out var context);
         if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
         {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectTableErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
+            return Fail(response, stopwatch, 4, NativeObjectTableErrorCode.ContextNotFound);
         }
         if (acquireResult == NativeContextAcquireResult.Busy)
         {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectTableErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
+            return Fail(response, stopwatch, 5, NativeObjectTableErrorCode.ContextBusy);
         }
 
         try
@@ -926,10 +903,7 @@ public static unsafe class NativeExports
             var totalCount = context.Session.CountObjects(requestedAssetTypes);
             if (!TryNormalizeObjectTableLimit(request->Limit, totalCount, out var limit))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
             var page = context.Session.ListObjects(new AssetStudioObjectListOptions
             {
@@ -967,34 +941,22 @@ public static unsafe class NativeExports
         lookupKind = default;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectTableErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            return Fail(response, stopwatch, 1, NativeObjectTableErrorCode.NullPointer);
         }
 
         if (request->StructSize < sizeof(NativeObjectLookupRequest))
         {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
         }
 
         var acquireResult = TryAcquireSession(request->ContextId, out var context);
         if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
         {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectTableErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
+            return Fail(response, stopwatch, 4, NativeObjectTableErrorCode.ContextNotFound);
         }
         if (acquireResult == NativeContextAcquireResult.Busy)
         {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectTableErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
+            return Fail(response, stopwatch, 5, NativeObjectTableErrorCode.ContextBusy);
         }
 
         try
@@ -1002,19 +964,13 @@ public static unsafe class NativeExports
             lookupKind = (NativeObjectLookupKind)request->LookupKind;
             if (!Enum.IsDefined(typeof(NativeObjectLookupKind), lookupKind))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var query = ParseNativeUtf8(request->QueryUtf8, request->QueryUtf8Len, "query_utf8");
             if (lookupKind != NativeObjectLookupKind.PathId && string.IsNullOrEmpty(query))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
 
             var requestedAssetTypes = ParseNativeAssetTypes(request->AssetTypesCsvUtf8, request->AssetTypesCsvUtf8Len);
@@ -1022,10 +978,7 @@ public static unsafe class NativeExports
             var requestedLimit = request->Limit;
             if (!TryNormalizeObjectTableLimit(requestedLimit, int.MaxValue, out var limit))
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectTableErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectTableErrorCode.InvalidRequest);
             }
             var lookup = context.Session.LookupObjects(new AssetStudioObjectLookupOptions
             {
@@ -1094,21 +1047,6 @@ public static unsafe class NativeExports
         response->ObjectTableAbiVersion = FfiObjectTableAbiVersion;
     }
 
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2D))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Texture2DArray))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Sprite))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.TextAsset))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.MonoBehaviour))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.AudioClip))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.VideoClip))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.MovieTexture))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Font))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Shader))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Mesh))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.Animator))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(AssetStudio.AnimationClip))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.FMODSoundType))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(AssetStudio.AudioCompressionFormat))]
     [UnmanagedCallersOnly(EntryPoint = "haruki_assetstudio_context_read_object_v1", CallConvs = new[] { typeof(CallConvCdecl) })]
     public static int ContextReadObjectV1(NativeObjectReadRequest* request, NativeObjectReadResponse* response)
     {
@@ -1123,36 +1061,27 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
             }
 
             var acquireResult = TryAcquireSession(request->ContextId, out var context);
             if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
             {
-                response->Status = 4;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
                 response->ContextId = request->ContextId;
                 response->PathId = request->PathId;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 4;
+                return Fail(response, stopwatch, 4, NativeObjectReadErrorCode.ContextNotFound);
             }
             if (acquireResult == NativeContextAcquireResult.Busy)
             {
-                response->Status = 5;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
                 response->ContextId = request->ContextId;
                 response->PathId = request->PathId;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeObjectReadErrorCode.ContextBusy);
             }
 
             try
             {
                 var kind = ReadNativeUtf8(request->KindUtf8, request->KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(request->ImageFormatUtf8, request->ImageFormatUtf8Len, defaultValue: "bmp");
+                var imageFormat = ReadNativeUtf8(request->ImageFormatUtf8, request->ImageFormatUtf8Len, defaultValue: "raw_rgba");
                 var result = context.Session.ReadObject(new AssetStudioObjectReadOptions
                 {
                     PathId = request->PathId,
@@ -1194,18 +1123,14 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_read_object_v1", ex);
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
+            ReleaseNativeObjectReadResponseResources(response);
+            return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_object_v1", ex);
-            response->Status = ClassifyReadStatus(ex);
-            response->ErrorCode = ToNativeObjectReadErrorCode(ClassifyReadError(ex));
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return response->Status;
+            ReleaseNativeObjectReadResponseResources(response);
+            return Fail(response, stopwatch, ClassifyReadStatus(ex), ToNativeObjectReadErrorCode(ClassifyReadError(ex)));
         }
     }
 
@@ -1215,6 +1140,60 @@ public static unsafe class NativeExports
         response->AbiVersion = FfiAbiVersion;
         response->SchemaVersion = FfiSchemaVersion;
         response->ObjectReadAbiVersion = FfiObjectReadAbiVersion;
+    }
+
+    /// <summary>
+    /// Frees native blocks already attached to a response on a failure path and
+    /// zeroes the pointers: a non-zero status must never carry live allocations,
+    /// because callers only free resources of successful responses.
+    /// </summary>
+    private static void ReleaseNativeObjectReadResponseResources(NativeObjectReadResponse* response)
+    {
+        if (response == null)
+        {
+            return;
+        }
+        if (response->Payload != null)
+        {
+            NativeMemory.Free(response->Payload);
+            response->Payload = null;
+        }
+        response->PayloadLen = 0;
+        if (response->Buffer != null)
+        {
+            NativeMemory.Free(response->Buffer);
+            response->Buffer = null;
+        }
+        response->BufferLen = 0;
+        response->PayloadKind = null;
+        response->PayloadKindLen = 0;
+        response->SuggestedExtension = null;
+        response->SuggestedExtensionLen = 0;
+    }
+
+    /// <inheritdoc cref="ReleaseNativeObjectReadResponseResources"/>
+    private static void ReleaseNativeObjectReadBatchResponseResources(NativeObjectReadBatchResponse* response)
+    {
+        if (response == null)
+        {
+            return;
+        }
+        if (response->Payload != null)
+        {
+            NativeMemory.Free(response->Payload);
+            response->Payload = null;
+        }
+        response->PayloadLen = 0;
+        if (response->ItemsBuffer != null)
+        {
+            NativeMemory.Free(response->ItemsBuffer);
+            response->ItemsBuffer = null;
+        }
+        response->ItemsBufferLen = 0;
+        response->Items = null;
+        response->StringData = null;
+        response->StringDataLen = 0;
+        response->ReturnedCount = 0;
     }
 
     [UnmanagedCallersOnly(EntryPoint = "haruki_assetstudio_context_read_objects_v1", CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -1237,49 +1216,31 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
             }
             response->ContextId = request->ContextId;
             response->RequestedCount = Math.Max(0, request->Count);
 
             if (request->Count < 0)
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
             }
             if (request->Count > MaxNativeObjectReadBatchCount)
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
             }
             if (request->Count > 0 && request->Items == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
             }
             var acquireResult = TryAcquireSession(request->ContextId, out var context);
             if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
             {
-                response->Status = 4;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 4;
+                return Fail(response, stopwatch, 4, NativeObjectReadErrorCode.ContextNotFound);
             }
             if (acquireResult == NativeContextAcquireResult.Busy)
             {
-                response->Status = 5;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeObjectReadErrorCode.ContextBusy);
             }
 
             try
@@ -1306,10 +1267,8 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            ReleaseNativeObjectReadBatchResponseResources(response);
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
         finally
         {
@@ -1347,49 +1306,31 @@ public static unsafe class NativeExports
         {
             if (request == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
             }
             response->ContextId = request->ContextId;
             response->RequestedCount = Math.Max(0, request->Count);
 
             if (request->Count < 0)
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
             }
             if (request->Count > MaxNativeObjectReadBatchCount)
             {
-                response->Status = 2;
-                response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 2;
+                return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
             }
             if (request->Count > 0 && request->Items == null)
             {
-                response->Status = 1;
-                response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 1;
+                return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
             }
             var acquireResult = TryAcquireSession(request->ContextId, out var context);
             if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
             {
-                response->Status = 4;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 4;
+                return Fail(response, stopwatch, 4, NativeObjectReadErrorCode.ContextNotFound);
             }
             if (acquireResult == NativeContextAcquireResult.Busy)
             {
-                response->Status = 5;
-                response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
-                return 5;
+                return Fail(response, stopwatch, 5, NativeObjectReadErrorCode.ContextBusy);
             }
 
             try
@@ -1425,10 +1366,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
         finally
         {
@@ -1516,10 +1454,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_size_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1544,7 +1479,10 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchSignature(request->Items, request->Count);
-                var result = context.TryGetPendingReadBatch(signature, out var cachedResult)
+                // Single-read protocol: reuse the payload bytes captured by size_v1 when
+                // available, otherwise capture once here. The packed payload block is then
+                // reproduced by memcpy — objects are never read (or decoded) a second time.
+                var result = context.TryGetPendingReadBatch(signature, out var cachedResult) && cachedResult.HasCapturedPayloads
                     ? cachedResult
                     : BuildObjectReadBatch(context, request->Items, request->Count, capturePayloads: true);
                 response->ContextId = request->ContextId;
@@ -1554,7 +1492,6 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
                     || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
@@ -1563,6 +1500,7 @@ public static unsafe class NativeExports
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1573,10 +1511,7 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
-                }
+                WriteObjectReadBatchPayloadInto(result.Reads, request->Payload, result.PayloadLen);
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1584,6 +1519,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 context.ClearPendingReadBatch(signature);
                 Diagnostics.Event(context.OperationId, "context_read_objects_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
@@ -1596,10 +1532,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1624,8 +1557,10 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchByIndexSignature(request->Items, request->Count);
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Capture payload bytes so the following into_v1 call can memcpy them
+                // instead of re-reading (and re-decoding) every object. Mirrors the
+                // path-id size_v1 behavior.
+                var result = BuildObjectReadBatchByIndex(context, request->Items, request->Count, capturePayloads: true);
                 if (ShouldCacheObjectReadBatch(result))
                 {
                     context.SetPendingReadBatch(signature, result);
@@ -1658,10 +1593,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_by_index_size_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1686,7 +1618,8 @@ public static unsafe class NativeExports
             try
             {
                 var signature = BuildObjectReadBatchByIndexSignature(request->Items, request->Count);
-                var result = context.TryGetPendingReadBatch(signature, out var cachedResult)
+                // Single-read protocol: see ContextReadObjectsIntoV1.
+                var result = context.TryGetPendingReadBatch(signature, out var cachedResult) && cachedResult.HasCapturedPayloads
                     ? cachedResult
                     : BuildObjectReadBatchByIndex(context, request->Items, request->Count, capturePayloads: true);
                 response->ContextId = request->ContextId;
@@ -1696,7 +1629,6 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
                     || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
@@ -1705,6 +1637,7 @@ public static unsafe class NativeExports
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1715,10 +1648,7 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
-                }
+                WriteObjectReadBatchPayloadInto(result.Reads, request->Payload, result.PayloadLen);
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1726,6 +1656,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 context.ClearPendingReadBatch(signature);
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
@@ -1738,10 +1669,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_by_index_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1765,8 +1693,12 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: payload bytes stream straight into the caller buffer while
+                // they fit. On overflow the stream keeps counting so the exact required
+                // sizes are still reported with BUFFER_TOO_SMALL; caller buffer contents
+                // are unspecified in that case.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: false);
+                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
                 response->ContextId = request->ContextId;
                 response->RequestedCount = request->Count;
                 response->ReturnedCount = result.Reads.Count;
@@ -1774,15 +1706,15 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
-                    || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
+                    || payloadStream.Overflowed)
                 {
                     response->Status = 8;
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1793,10 +1725,6 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
-                }
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1804,6 +1732,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 Diagnostics.Event(context.OperationId, "context_read_objects_direct_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
             }
@@ -1815,10 +1744,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_direct_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1842,8 +1768,9 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: see ContextReadObjectsDirectIntoV1.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: false);
+                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
                 response->ContextId = request->ContextId;
                 response->RequestedCount = request->Count;
                 response->ReturnedCount = result.Reads.Count;
@@ -1851,15 +1778,15 @@ public static unsafe class NativeExports
                 response->RequiredItemsBufferLen = result.ItemsBufferLen;
                 response->RequiredStringDataLen = result.StringDataLen;
                 response->RequiredPayloadLen = result.PayloadLen;
-                response->DurationMs = stopwatch.ElapsedMilliseconds;
 
                 if ((result.ItemsBufferLen > 0 && (request->ItemsBuffer == null || request->ItemsBufferLen < result.ItemsBufferLen))
-                    || (result.PayloadLen > 0 && (request->Payload == null || request->PayloadLen < result.PayloadLen)))
+                    || payloadStream.Overflowed)
                 {
                     response->Status = 8;
                     response->ErrorCode = NativeObjectReadErrorCode.BufferTooSmall;
                     response->ItemsBufferLen = request->ItemsBufferLen;
                     response->PayloadLen = request->PayloadLen;
+                    response->DurationMs = stopwatch.ElapsedMilliseconds;
                     return 8;
                 }
 
@@ -1870,10 +1797,6 @@ public static unsafe class NativeExports
                     out response->Items,
                     out response->StringData,
                     out response->StringDataLen);
-                using (var payloadStream = new NativeBufferWriteStream(request->Payload, result.PayloadLen))
-                {
-                    result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
-                }
 
                 response->ItemsBuffer = request->ItemsBuffer;
                 response->ItemsBufferLen = result.ItemsBufferLen;
@@ -1881,6 +1804,7 @@ public static unsafe class NativeExports
                 response->PayloadLen = result.PayloadLen;
                 response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, request->Count);
                 response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, request->Count);
+                response->DurationMs = stopwatch.ElapsedMilliseconds;
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_direct_into_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen}");
                 return response->Status;
             }
@@ -1892,10 +1816,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_by_index_direct_into_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1922,8 +1843,11 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: payload bytes stream straight into the caller buffer and
+                // spill into a native buffer on overflow, so objects are read (and
+                // textures decoded) exactly once.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: true);
+                var result = BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream);
                 var rc = WriteObjectReadBatchRetryResultV1(
                     result,
                     request->ContextId,
@@ -1931,10 +1855,9 @@ public static unsafe class NativeExports
                     request->ItemsBuffer,
                     request->ItemsBufferLen,
                     request->Payload,
-                    request->PayloadLen,
+                    payloadStream,
                     stopwatch,
-                    response,
-                    payloadStream => BuildObjectReadBatchInto(context, request->Items, request->Count, payloadStream));
+                    response);
                 Diagnostics.Event(context.OperationId, "context_read_objects_direct_retry_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen} handle={response->ResultHandle}");
                 return rc;
             }
@@ -1946,10 +1869,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_direct_retry_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -1976,8 +1896,9 @@ public static unsafe class NativeExports
 
             try
             {
-                using var sizingStream = new CountingWriteStream();
-                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, sizingStream);
+                // Single pass: see ContextReadObjectsDirectRetryV1.
+                using var payloadStream = new NativeOptimisticPayloadStream(request->Payload, request->PayloadLen, spillToNativeOnOverflow: true);
+                var result = BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream);
                 var rc = WriteObjectReadBatchRetryResultV1(
                     result,
                     request->ContextId,
@@ -1985,10 +1906,9 @@ public static unsafe class NativeExports
                     request->ItemsBuffer,
                     request->ItemsBufferLen,
                     request->Payload,
-                    request->PayloadLen,
+                    payloadStream,
                     stopwatch,
-                    response,
-                    payloadStream => BuildObjectReadBatchByIndexInto(context, request->Items, request->Count, payloadStream));
+                    response);
                 Diagnostics.Event(context.OperationId, "context_read_objects_by_index_direct_retry_v1", $"count={request->Count} failed={result.FailedCount} payload_len={result.PayloadLen} handle={response->ResultHandle}");
                 return rc;
             }
@@ -2000,10 +1920,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_by_index_direct_retry_v1", ex);
-            response->Status = 100;
-            response->ErrorCode = NativeObjectReadErrorCode.InternalError;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 100;
+            return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
     }
 
@@ -2049,67 +1966,93 @@ public static unsafe class NativeExports
         response->ObjectReadBatchIntoAbiVersion = FfiObjectReadBatchIntoAbiVersion;
     }
 
+    // Shared request validation for the typed batch read entry points. The request
+    // structs differ only in item layout; the checks are identical per response type.
+
+    private static int ValidateObjectReadBatchCore(
+        NativeObjectReadBatchSizeResponseV1* response,
+        Stopwatch stopwatch,
+        long contextId,
+        bool structSizeOk,
+        int count,
+        bool itemsNull,
+        out ActiveNativeContext? context)
+    {
+        context = null;
+        response->ContextId = contextId;
+        response->RequestedCount = Math.Max(0, count);
+        if (!structSizeOk || count < 0 || count > MaxNativeObjectReadBatchCount)
+        {
+            return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
+        }
+        if (count > 0 && itemsNull)
+        {
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
+        }
+        var acquireResult = TryAcquireSession(contextId, out context);
+        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
+        {
+            return Fail(response, stopwatch, 4, NativeObjectReadErrorCode.ContextNotFound);
+        }
+        if (acquireResult == NativeContextAcquireResult.Busy)
+        {
+            return Fail(response, stopwatch, 5, NativeObjectReadErrorCode.ContextBusy);
+        }
+        return 0;
+    }
+
+    private static int ValidateObjectReadBatchCore(
+        NativeObjectReadBatchIntoResponseV1* response,
+        Stopwatch stopwatch,
+        long contextId,
+        bool structSizeOk,
+        int count,
+        bool itemsNull,
+        out ActiveNativeContext? context)
+    {
+        context = null;
+        response->ContextId = contextId;
+        response->RequestedCount = Math.Max(0, count);
+        if (!structSizeOk || count < 0 || count > MaxNativeObjectReadBatchCount)
+        {
+            return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
+        }
+        if (count > 0 && itemsNull)
+        {
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
+        }
+        var acquireResult = TryAcquireSession(contextId, out context);
+        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
+        {
+            return Fail(response, stopwatch, 4, NativeObjectReadErrorCode.ContextNotFound);
+        }
+        if (acquireResult == NativeContextAcquireResult.Busy)
+        {
+            return Fail(response, stopwatch, 5, NativeObjectReadErrorCode.ContextBusy);
+        }
+        return 0;
+    }
+
     private static int ValidateObjectReadBatchRequestV1(
         NativeObjectReadBatchRequestV1* request,
         Stopwatch stopwatch,
         out ActiveNativeContext? context,
         NativeObjectReadBatchSizeResponseV1* response)
     {
-        context = null;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            context = null;
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
         }
 
-        response->ContextId = request->ContextId;
-        response->RequestedCount = Math.Max(0, request->Count);
-        if (request->StructSize < sizeof(NativeObjectReadBatchRequestV1))
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count < 0)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > MaxNativeObjectReadBatchCount)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > 0 && request->Items == null)
-        {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
-        }
-        var acquireResult = TryAcquireSession(request->ContextId, out context);
-        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
-        {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
-        }
-        if (acquireResult == NativeContextAcquireResult.Busy)
-        {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
-        }
-        return 0;
+        return ValidateObjectReadBatchCore(
+            response,
+            stopwatch,
+            request->ContextId,
+            request->StructSize >= sizeof(NativeObjectReadBatchRequestV1),
+            request->Count,
+            request->Items == null,
+            out context);
     }
 
     private static int ValidateObjectReadBatchIntoRequestV1(
@@ -2118,61 +2061,20 @@ public static unsafe class NativeExports
         out ActiveNativeContext? context,
         NativeObjectReadBatchIntoResponseV1* response)
     {
-        context = null;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            context = null;
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
         }
 
-        response->ContextId = request->ContextId;
-        response->RequestedCount = Math.Max(0, request->Count);
-        if (request->StructSize < sizeof(NativeObjectReadBatchIntoRequestV1))
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count < 0)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > MaxNativeObjectReadBatchCount)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > 0 && request->Items == null)
-        {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
-        }
-        var acquireResult = TryAcquireSession(request->ContextId, out context);
-        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
-        {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
-        }
-        if (acquireResult == NativeContextAcquireResult.Busy)
-        {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
-        }
-        return 0;
+        return ValidateObjectReadBatchCore(
+            response,
+            stopwatch,
+            request->ContextId,
+            request->StructSize >= sizeof(NativeObjectReadBatchIntoRequestV1),
+            request->Count,
+            request->Items == null,
+            out context);
     }
 
     private static int ValidateObjectReadBatchByIndexRequestV1(
@@ -2181,54 +2083,20 @@ public static unsafe class NativeExports
         out ActiveNativeContext? context,
         NativeObjectReadBatchSizeResponseV1* response)
     {
-        context = null;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            context = null;
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
         }
 
-        response->ContextId = request->ContextId;
-        response->RequestedCount = Math.Max(0, request->Count);
-        if (request->StructSize < sizeof(NativeObjectReadBatchByIndexRequestV1))
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count < 0 || request->Count > MaxNativeObjectReadBatchCount)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > 0 && request->Items == null)
-        {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
-        }
-        var acquireResult = TryAcquireSession(request->ContextId, out context);
-        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
-        {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
-        }
-        if (acquireResult == NativeContextAcquireResult.Busy)
-        {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
-        }
-        return 0;
+        return ValidateObjectReadBatchCore(
+            response,
+            stopwatch,
+            request->ContextId,
+            request->StructSize >= sizeof(NativeObjectReadBatchByIndexRequestV1),
+            request->Count,
+            request->Items == null,
+            out context);
     }
 
     private static int ValidateObjectReadBatchByIndexIntoRequestV1(
@@ -2237,54 +2105,20 @@ public static unsafe class NativeExports
         out ActiveNativeContext? context,
         NativeObjectReadBatchIntoResponseV1* response)
     {
-        context = null;
         if (request == null)
         {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
+            context = null;
+            return Fail(response, stopwatch, 1, NativeObjectReadErrorCode.NullPointer);
         }
 
-        response->ContextId = request->ContextId;
-        response->RequestedCount = Math.Max(0, request->Count);
-        if (request->StructSize < sizeof(NativeObjectReadBatchByIndexIntoRequestV1))
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count < 0 || request->Count > MaxNativeObjectReadBatchCount)
-        {
-            response->Status = 2;
-            response->ErrorCode = NativeObjectReadErrorCode.InvalidRequest;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 2;
-        }
-        if (request->Count > 0 && request->Items == null)
-        {
-            response->Status = 1;
-            response->ErrorCode = NativeObjectReadErrorCode.NullPointer;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 1;
-        }
-        var acquireResult = TryAcquireSession(request->ContextId, out context);
-        if (acquireResult == NativeContextAcquireResult.NotFound || context == null)
-        {
-            response->Status = 4;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextNotFound;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 4;
-        }
-        if (acquireResult == NativeContextAcquireResult.Busy)
-        {
-            response->Status = 5;
-            response->ErrorCode = NativeObjectReadErrorCode.ContextBusy;
-            response->DurationMs = stopwatch.ElapsedMilliseconds;
-            return 5;
-        }
-        return 0;
+        return ValidateObjectReadBatchCore(
+            response,
+            stopwatch,
+            request->ContextId,
+            request->StructSize >= sizeof(NativeObjectReadBatchByIndexIntoRequestV1),
+            request->Count,
+            request->Items == null,
+            out context);
     }
 
     private static int WriteObjectReadBatchRetryResultV1(
@@ -2294,10 +2128,9 @@ public static unsafe class NativeExports
         byte* callerItemsBuffer,
         long callerItemsBufferLen,
         byte* callerPayload,
-        long callerPayloadLen,
+        NativeOptimisticPayloadStream payload,
         Stopwatch stopwatch,
-        NativeObjectReadBatchRetryResponseV1* response,
-        Func<Stream, NativeObjectReadBatchBuildResult>? streamPayloads = null)
+        NativeObjectReadBatchRetryResponseV1* response)
     {
         const int NativeItemsOwnership = 1;
         const int NativePayloadOwnership = 2;
@@ -2309,16 +2142,15 @@ public static unsafe class NativeExports
         response->RequiredItemsBufferLen = result.ItemsBufferLen;
         response->RequiredStringDataLen = result.StringDataLen;
         response->RequiredPayloadLen = result.PayloadLen;
-        response->DurationMs = stopwatch.ElapsedMilliseconds;
 
+        // The payload was already written by the single read pass — either fully into
+        // the caller buffer or spilled into a native buffer the stream owns.
         var useNativeItemsBuffer = result.ItemsBufferLen > 0 && (callerItemsBuffer == null || callerItemsBufferLen < result.ItemsBufferLen);
-        var useNativePayload = result.PayloadLen > 0 && (callerPayload == null || callerPayloadLen < result.PayloadLen);
+        var useNativePayload = payload.UsedNativeBuffer;
         byte* itemsBuffer = useNativeItemsBuffer
             ? (byte*)NativeMemory.AllocZeroed((nuint)result.ItemsBufferLen)
             : callerItemsBuffer;
-        byte* payload = useNativePayload
-            ? (byte*)NativeMemory.Alloc((nuint)result.PayloadLen)
-            : callerPayload;
+        byte* nativePayload = null;
         var registered = false;
 
         try
@@ -2330,34 +2162,22 @@ public static unsafe class NativeExports
                 out response->Items,
                 out response->StringData,
                 out response->StringDataLen);
-            if (streamPayloads == null)
-            {
-                WriteObjectReadBatchPayloadInto(result.Reads, payload, result.PayloadLen);
-            }
-            else
-            {
-                using var payloadStream = new NativeBufferWriteStream(payload, result.PayloadLen);
-                result = streamPayloads(payloadStream);
-                response->ReturnedCount = result.Reads.Count;
-                response->FailedCount = result.FailedCount;
-                response->RequiredItemsBufferLen = result.ItemsBufferLen;
-                response->RequiredStringDataLen = result.StringDataLen;
-                response->RequiredPayloadLen = result.PayloadLen;
-            }
+            nativePayload = useNativePayload ? payload.Detach() : null;
 
             response->ItemsBuffer = itemsBuffer;
             response->ItemsBufferLen = result.ItemsBufferLen;
-            response->Payload = payload;
+            response->Payload = useNativePayload ? nativePayload : callerPayload;
             response->PayloadLen = result.PayloadLen;
             response->Status = DetermineBatchStatus(result.Reads, result.FailedCount, requestedCount);
             response->ErrorCode = DetermineBatchErrorCode(result.Reads, result.FailedCount, requestedCount);
             response->OwnershipFlags = (useNativeItemsBuffer ? NativeItemsOwnership : 0) | (useNativePayload ? NativePayloadOwnership : 0);
+            response->DurationMs = stopwatch.ElapsedMilliseconds;
             if (response->OwnershipFlags != 0)
             {
                 response->ResultHandle = RegisterResultArena(
                     contextId,
-                    useNativeItemsBuffer ? response->ItemsBuffer : null,
-                    useNativePayload ? response->Payload : null);
+                    useNativeItemsBuffer ? itemsBuffer : null,
+                    useNativePayload ? nativePayload : null);
                 registered = true;
             }
 
@@ -2371,12 +2191,160 @@ public static unsafe class NativeExports
                 {
                     NativeMemory.Free(itemsBuffer);
                 }
-                if (useNativePayload && payload != null)
+                if (nativePayload != null)
                 {
-                    NativeMemory.Free(payload);
+                    NativeMemory.Free(nativePayload);
+                }
+                if (useNativeItemsBuffer || nativePayload != null)
+                {
+                    // Never leave freed native pointers visible to the caller after an
+                    // exception between response assembly and arena registration.
+                    response->Items = null;
+                    response->StringData = null;
+                    response->StringDataLen = 0;
+                    response->ItemsBuffer = null;
+                    response->ItemsBufferLen = 0;
+                    response->Payload = null;
+                    response->PayloadLen = 0;
+                    response->OwnershipFlags = 0;
+                    response->ResultHandle = 0;
                 }
             }
         }
+    }
+
+    // The four Build* entry points below share one parse + execute + finish pipeline.
+    // Only the item layout (path-id vs stable index) and the payload strategy
+    // (captured managed arrays vs streaming into a writer) differ.
+
+    private sealed class ParsedObjectReadBatch
+    {
+        public ParsedObjectReadBatch(int count)
+        {
+            OptionIndexes = new List<int>(count);
+            Options = new List<AssetStudioObjectReadOptions>(count);
+            Reads = new List<NativeObjectReadItemBuildResult>(count);
+        }
+
+        // Maps batch result indexes (into Options) back to the caller's item order.
+        public List<int> OptionIndexes { get; }
+        public List<AssetStudioObjectReadOptions> Options { get; }
+        // Seeded with per-item parse failures; FinishObjectReadBatch appends the rest.
+        public List<NativeObjectReadItemBuildResult> Reads { get; }
+    }
+
+    private static ParsedObjectReadBatch ParseObjectReadBatchItems(
+        NativeObjectReadItemRequest* items,
+        int count,
+        string diagnosticsScope)
+    {
+        var parsed = new ParsedObjectReadBatch(count);
+        for (var i = 0; i < count; i++)
+        {
+            var item = items[i];
+            try
+            {
+                var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
+                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "raw_rgba");
+                parsed.OptionIndexes.Add(i);
+                parsed.Options.Add(new AssetStudioObjectReadOptions
+                {
+                    PathId = item.PathId,
+                    Kind = kind,
+                    ImageFormat = imageFormat,
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                Diagnostics.Exception(diagnosticsScope, ex);
+                parsed.Reads.Add(NativeObjectReadItemBuildResult.Fail(
+                    i,
+                    item.PathId,
+                    2,
+                    NativeObjectReadErrorCode.InvalidRequest,
+                    ex.Message));
+            }
+        }
+        return parsed;
+    }
+
+    private static ParsedObjectReadBatch ParseObjectReadBatchItemsByIndex(
+        NativeObjectReadItemByIndexRequestV1* items,
+        int count,
+        string diagnosticsScope)
+    {
+        var parsed = new ParsedObjectReadBatch(count);
+        for (var i = 0; i < count; i++)
+        {
+            var item = items[i];
+            try
+            {
+                if (item.ObjectIndex < 0)
+                {
+                    throw new ArgumentException("object_index cannot be negative");
+                }
+                var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
+                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "raw_rgba");
+                parsed.OptionIndexes.Add(i);
+                parsed.Options.Add(new AssetStudioObjectReadOptions
+                {
+                    ObjectIndex = item.ObjectIndex,
+                    Kind = kind,
+                    ImageFormat = imageFormat,
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                Diagnostics.Exception(diagnosticsScope, ex);
+                parsed.Reads.Add(NativeObjectReadItemBuildResult.Fail(
+                    i,
+                    0,
+                    2,
+                    NativeObjectReadErrorCode.InvalidRequest,
+                    ex.Message));
+            }
+        }
+        return parsed;
+    }
+
+    private static NativeObjectReadBatchBuildResult FinishObjectReadBatch(
+        AssetStudioObjectReadBatchResult batch,
+        ParsedObjectReadBatch parsed,
+        int count,
+        bool includePayloads)
+    {
+        var hasCapturedPayloads = includePayloads;
+        var nativeReads = parsed.Reads;
+        nativeReads.AddRange(batch.Reads.Select(read =>
+        {
+            var originalIndex = read.Index >= 0 && read.Index < parsed.OptionIndexes.Count
+                ? parsed.OptionIndexes[read.Index]
+                : read.Index;
+            return new NativeObjectReadItemBuildResult(
+                index: originalIndex,
+                status: read.Status,
+                errorCode: ToNativeObjectReadErrorCode(read.ErrorKind),
+                pathId: read.PathId,
+                typeId: read.TypeId,
+                size: read.Size,
+                payloadKind: read.PayloadKind,
+                suggestedExtension: read.SuggestedExtension,
+                errorMessage: read.ErrorMessage,
+                payload: includePayloads ? read.Payload : null,
+                payloadOffset: read.PayloadOffset,
+                payloadLen: read.PayloadLen);
+        }));
+        nativeReads.Sort(static (left, right) => left.Index.CompareTo(right.Index));
+
+        var stringDataLen = EstimateObjectReadBatchStringBytesV1(nativeReads);
+        var itemsBufferLen = AlignNativeObjectTableOffset(nativeReads.Count * sizeof(NativeObjectReadItemResponseV1)) + stringDataLen;
+        return new NativeObjectReadBatchBuildResult(
+            nativeReads,
+            batch.FailedCount + (count - parsed.Options.Count),
+            itemsBufferLen,
+            stringDataLen,
+            batch.PayloadLen,
+            hasCapturedPayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatch(
@@ -2385,66 +2353,9 @@ public static unsafe class NativeExports
         int count,
         bool capturePayloads)
     {
-        var optionIndexes = new List<int>(count);
-        var options = new List<AssetStudioObjectReadOptions>(count);
-        var nativeReads = new List<NativeObjectReadItemBuildResult>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var item = items[i];
-            try
-            {
-                var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp");
-                optionIndexes.Add(i);
-                options.Add(new AssetStudioObjectReadOptions
-                {
-                    PathId = item.PathId,
-                    Kind = kind,
-                    ImageFormat = imageFormat,
-                });
-            }
-            catch (ArgumentException ex)
-            {
-                Diagnostics.Exception("context_read_objects_batch", ex);
-                nativeReads.Add(NativeObjectReadItemBuildResult.Fail(
-                    i,
-                    item.PathId,
-                    2,
-                    NativeObjectReadErrorCode.InvalidRequest,
-                    ex.Message));
-            }
-        }
-
-        var batch = context.Session.ReadObjectsBatch(options, capturePayloads);
-        nativeReads.AddRange(batch.Reads.Select(read =>
-        {
-            var originalIndex = read.Index >= 0 && read.Index < optionIndexes.Count
-                ? optionIndexes[read.Index]
-                : read.Index;
-            return new NativeObjectReadItemBuildResult(
-                index: originalIndex,
-                status: read.Status,
-                errorCode: ToNativeObjectReadErrorCode(read.ErrorKind),
-                pathId: read.PathId,
-                typeId: read.TypeId,
-                size: read.Size,
-                payloadKind: read.PayloadKind,
-                suggestedExtension: read.SuggestedExtension,
-                errorMessage: read.ErrorMessage,
-                payload: read.Payload,
-                payloadOffset: read.PayloadOffset,
-                payloadLen: read.PayloadLen);
-        }));
-        nativeReads.Sort(static (left, right) => left.Index.CompareTo(right.Index));
-
-        var stringDataLen = EstimateObjectReadBatchStringBytesV1(nativeReads);
-        var itemsBufferLen = AlignNativeObjectTableOffset(nativeReads.Count * sizeof(NativeObjectReadItemResponseV1)) + stringDataLen;
-        return new NativeObjectReadBatchBuildResult(
-            nativeReads,
-            batch.FailedCount + (count - options.Count),
-            itemsBufferLen,
-            stringDataLen,
-            batch.PayloadLen);
+        var parsed = ParseObjectReadBatchItems(items, count, "context_read_objects_batch");
+        var batch = context.Session.ReadObjectsBatch(parsed.Options, capturePayloads);
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: capturePayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatchByIndex(
@@ -2453,70 +2364,9 @@ public static unsafe class NativeExports
         int count,
         bool capturePayloads)
     {
-        var optionIndexes = new List<int>(count);
-        var options = new List<AssetStudioObjectReadOptions>(count);
-        var nativeReads = new List<NativeObjectReadItemBuildResult>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var item = items[i];
-            try
-            {
-                if (item.ObjectIndex < 0)
-                {
-                    throw new ArgumentException("object_index cannot be negative");
-                }
-                var kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto");
-                var imageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp");
-                optionIndexes.Add(i);
-                options.Add(new AssetStudioObjectReadOptions
-                {
-                    ObjectIndex = item.ObjectIndex,
-                    Kind = kind,
-                    ImageFormat = imageFormat,
-                });
-            }
-            catch (ArgumentException ex)
-            {
-                Diagnostics.Exception("context_read_objects_by_index_batch", ex);
-                nativeReads.Add(NativeObjectReadItemBuildResult.Fail(
-                    i,
-                    0,
-                    2,
-                    NativeObjectReadErrorCode.InvalidRequest,
-                    ex.Message));
-            }
-        }
-
-        var batch = context.Session.ReadObjectsBatch(options, capturePayloads);
-        nativeReads.AddRange(batch.Reads.Select(read =>
-        {
-            var originalIndex = read.Index >= 0 && read.Index < optionIndexes.Count
-                ? optionIndexes[read.Index]
-                : read.Index;
-            return new NativeObjectReadItemBuildResult(
-                index: originalIndex,
-                status: read.Status,
-                errorCode: ToNativeObjectReadErrorCode(read.ErrorKind),
-                pathId: read.PathId,
-                typeId: read.TypeId,
-                size: read.Size,
-                payloadKind: read.PayloadKind,
-                suggestedExtension: read.SuggestedExtension,
-                errorMessage: read.ErrorMessage,
-                payload: read.Payload,
-                payloadOffset: read.PayloadOffset,
-                payloadLen: read.PayloadLen);
-        }));
-        nativeReads.Sort(static (left, right) => left.Index.CompareTo(right.Index));
-
-        var stringDataLen = EstimateObjectReadBatchStringBytesV1(nativeReads);
-        var itemsBufferLen = AlignNativeObjectTableOffset(nativeReads.Count * sizeof(NativeObjectReadItemResponseV1)) + stringDataLen;
-        return new NativeObjectReadBatchBuildResult(
-            nativeReads,
-            batch.FailedCount + (count - options.Count),
-            itemsBufferLen,
-            stringDataLen,
-            batch.PayloadLen);
+        var parsed = ParseObjectReadBatchItemsByIndex(items, count, "context_read_objects_by_index_batch");
+        var batch = context.Session.ReadObjectsBatch(parsed.Options, capturePayloads);
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: capturePayloads);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatchInto(
@@ -2525,57 +2375,9 @@ public static unsafe class NativeExports
         int count,
         Stream payloadStream)
     {
-        var optionIndexes = new List<int>(count);
-        var options = new List<AssetStudioObjectReadOptions>(count);
-        var nativeReads = new List<NativeObjectReadItemBuildResult>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var item = items[i];
-            try
-            {
-                optionIndexes.Add(i);
-                options.Add(new AssetStudioObjectReadOptions
-                {
-                    PathId = item.PathId,
-                    Kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto"),
-                    ImageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp"),
-                });
-            }
-            catch (ArgumentException ex)
-            {
-                Diagnostics.Exception("context_read_objects_batch_into", ex);
-                nativeReads.Add(NativeObjectReadItemBuildResult.Fail(i, item.PathId, 2, NativeObjectReadErrorCode.InvalidRequest, ex.Message));
-            }
-        }
-
-        var batch = context.Session.ReadObjectsBatchInto(options, new AssetStudioStreamPayloadWriter(payloadStream));
-        nativeReads.AddRange(batch.Reads.Select(read =>
-        {
-            var originalIndex = read.Index >= 0 && read.Index < optionIndexes.Count ? optionIndexes[read.Index] : read.Index;
-            return new NativeObjectReadItemBuildResult(
-                originalIndex,
-                read.Status,
-                ToNativeObjectReadErrorCode(read.ErrorKind),
-                read.PathId,
-                read.TypeId,
-                read.Size,
-                read.PayloadKind,
-                read.SuggestedExtension,
-                read.ErrorMessage,
-                payload: null,
-                read.PayloadOffset,
-                read.PayloadLen);
-        }));
-        nativeReads.Sort(static (left, right) => left.Index.CompareTo(right.Index));
-
-        var stringDataLen = EstimateObjectReadBatchStringBytesV1(nativeReads);
-        var itemsBufferLen = AlignNativeObjectTableOffset(nativeReads.Count * sizeof(NativeObjectReadItemResponseV1)) + stringDataLen;
-        return new NativeObjectReadBatchBuildResult(
-            nativeReads,
-            batch.FailedCount + (count - options.Count),
-            itemsBufferLen,
-            stringDataLen,
-            batch.PayloadLen);
+        var parsed = ParseObjectReadBatchItems(items, count, "context_read_objects_batch_into");
+        var batch = context.Session.ReadObjectsBatchInto(parsed.Options, new AssetStudioStreamPayloadWriter(payloadStream));
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: false);
     }
 
     private static NativeObjectReadBatchBuildResult BuildObjectReadBatchByIndexInto(
@@ -2584,61 +2386,9 @@ public static unsafe class NativeExports
         int count,
         Stream payloadStream)
     {
-        var optionIndexes = new List<int>(count);
-        var options = new List<AssetStudioObjectReadOptions>(count);
-        var nativeReads = new List<NativeObjectReadItemBuildResult>(count);
-        for (var i = 0; i < count; i++)
-        {
-            var item = items[i];
-            try
-            {
-                if (item.ObjectIndex < 0)
-                {
-                    throw new ArgumentException("object_index cannot be negative");
-                }
-                optionIndexes.Add(i);
-                options.Add(new AssetStudioObjectReadOptions
-                {
-                    ObjectIndex = item.ObjectIndex,
-                    Kind = ReadNativeUtf8(item.KindUtf8, item.KindUtf8Len, defaultValue: "auto"),
-                    ImageFormat = ReadNativeUtf8(item.ImageFormatUtf8, item.ImageFormatUtf8Len, defaultValue: "bmp"),
-                });
-            }
-            catch (ArgumentException ex)
-            {
-                Diagnostics.Exception("context_read_objects_by_index_batch_into", ex);
-                nativeReads.Add(NativeObjectReadItemBuildResult.Fail(i, 0, 2, NativeObjectReadErrorCode.InvalidRequest, ex.Message));
-            }
-        }
-
-        var batch = context.Session.ReadObjectsBatchInto(options, new AssetStudioStreamPayloadWriter(payloadStream));
-        nativeReads.AddRange(batch.Reads.Select(read =>
-        {
-            var originalIndex = read.Index >= 0 && read.Index < optionIndexes.Count ? optionIndexes[read.Index] : read.Index;
-            return new NativeObjectReadItemBuildResult(
-                originalIndex,
-                read.Status,
-                ToNativeObjectReadErrorCode(read.ErrorKind),
-                read.PathId,
-                read.TypeId,
-                read.Size,
-                read.PayloadKind,
-                read.SuggestedExtension,
-                read.ErrorMessage,
-                payload: null,
-                read.PayloadOffset,
-                read.PayloadLen);
-        }));
-        nativeReads.Sort(static (left, right) => left.Index.CompareTo(right.Index));
-
-        var stringDataLen = EstimateObjectReadBatchStringBytesV1(nativeReads);
-        var itemsBufferLen = AlignNativeObjectTableOffset(nativeReads.Count * sizeof(NativeObjectReadItemResponseV1)) + stringDataLen;
-        return new NativeObjectReadBatchBuildResult(
-            nativeReads,
-            batch.FailedCount + (count - options.Count),
-            itemsBufferLen,
-            stringDataLen,
-            batch.PayloadLen);
+        var parsed = ParseObjectReadBatchItemsByIndex(items, count, "context_read_objects_by_index_batch_into");
+        var batch = context.Session.ReadObjectsBatchInto(parsed.Options, new AssetStudioStreamPayloadWriter(payloadStream));
+        return FinishObjectReadBatch(batch, parsed, count, includePayloads: false);
     }
 
     private static bool ShouldCacheObjectReadBatch(NativeObjectReadBatchBuildResult result)
@@ -2717,48 +2467,49 @@ public static unsafe class NativeExports
         return commonErrorCode ?? NativeObjectReadErrorCode.InternalError;
     }
 
-    private static NativeObjectReadBatchSignature BuildObjectReadBatchSignature(NativeObjectReadItemRequest* items, int count)
+    // FNV-1a accumulator shared by the path-id and by-index signature builders.
+    private ref struct NativeBatchSignatureHash
     {
-        const ulong offsetBasis = 14695981039346656037UL;
-        const ulong prime = 1099511628211UL;
-        var bytes = new List<byte>(Math.Max(4, count * 32));
+        private const ulong Prime = 1099511628211UL;
+        private ulong hash;
+        private readonly List<byte> bytes;
 
-        void AddByte(ref ulong hash, byte value)
+        public NativeBatchSignatureHash(int capacityHint)
+        {
+            hash = 14695981039346656037UL;
+            bytes = new List<byte>(Math.Max(4, capacityHint));
+        }
+
+        public void AddByte(byte value)
         {
             hash ^= value;
-            hash *= prime;
+            hash *= Prime;
             bytes.Add(value);
         }
 
-        void AddInt32(ref ulong hash, int value)
+        public void AddInt32(int value)
         {
             unchecked
             {
-                AddByte(ref hash, (byte)value);
-                AddByte(ref hash, (byte)(value >> 8));
-                AddByte(ref hash, (byte)(value >> 16));
-                AddByte(ref hash, (byte)(value >> 24));
+                AddByte((byte)value);
+                AddByte((byte)(value >> 8));
+                AddByte((byte)(value >> 16));
+                AddByte((byte)(value >> 24));
             }
         }
 
-        void AddInt64(ref ulong hash, long value)
+        public void AddInt64(long value)
         {
             unchecked
             {
-                AddByte(ref hash, (byte)value);
-                AddByte(ref hash, (byte)(value >> 8));
-                AddByte(ref hash, (byte)(value >> 16));
-                AddByte(ref hash, (byte)(value >> 24));
-                AddByte(ref hash, (byte)(value >> 32));
-                AddByte(ref hash, (byte)(value >> 40));
-                AddByte(ref hash, (byte)(value >> 48));
-                AddByte(ref hash, (byte)(value >> 56));
+                AddInt32((int)value);
+                AddInt32((int)(value >> 32));
             }
         }
 
-        void AddBytes(ref ulong hash, byte* value, int length)
+        public unsafe void AddBytes(byte* value, int length)
         {
-            AddInt32(ref hash, length);
+            AddInt32(length);
             if (value == null || length <= 0 || length > MaxNativeUtf8ByteLength)
             {
                 return;
@@ -2766,80 +2517,52 @@ public static unsafe class NativeExports
 
             for (var i = 0; i < length; i++)
             {
-                AddByte(ref hash, value[i]);
+                AddByte(value[i]);
             }
         }
 
-        var hash = offsetBasis;
-        AddInt32(ref hash, count);
-        if (items == null || count <= 0)
+        public NativeObjectReadBatchSignature Build()
         {
             return new NativeObjectReadBatchSignature(unchecked((long)hash), bytes.ToArray());
+        }
+    }
+
+    private static NativeObjectReadBatchSignature BuildObjectReadBatchSignature(NativeObjectReadItemRequest* items, int count)
+    {
+        var signature = new NativeBatchSignatureHash(count * 32);
+        signature.AddInt32(count);
+        if (items == null || count <= 0)
+        {
+            return signature.Build();
         }
 
         for (var i = 0; i < count; i++)
         {
             var item = items[i];
-            AddInt64(ref hash, item.PathId);
-            AddBytes(ref hash, item.KindUtf8, item.KindUtf8Len);
-            AddBytes(ref hash, item.ImageFormatUtf8, item.ImageFormatUtf8Len);
+            signature.AddInt64(item.PathId);
+            signature.AddBytes(item.KindUtf8, item.KindUtf8Len);
+            signature.AddBytes(item.ImageFormatUtf8, item.ImageFormatUtf8Len);
         }
-        return new NativeObjectReadBatchSignature(unchecked((long)hash), bytes.ToArray());
+        return signature.Build();
     }
 
     private static NativeObjectReadBatchSignature BuildObjectReadBatchByIndexSignature(NativeObjectReadItemByIndexRequestV1* items, int count)
     {
-        const ulong offsetBasis = 14695981039346656037UL;
-        const ulong prime = 1099511628211UL;
-        var bytes = new List<byte>(Math.Max(4, count * 24));
-
-        void AddByte(ref ulong hash, byte value)
-        {
-            hash ^= value;
-            hash *= prime;
-            bytes.Add(value);
-        }
-
-        void AddInt32(ref ulong hash, int value)
-        {
-            unchecked
-            {
-                AddByte(ref hash, (byte)value);
-                AddByte(ref hash, (byte)(value >> 8));
-                AddByte(ref hash, (byte)(value >> 16));
-                AddByte(ref hash, (byte)(value >> 24));
-            }
-        }
-
-        void AddBytes(ref ulong hash, byte* value, int length)
-        {
-            AddInt32(ref hash, length);
-            if (value == null || length <= 0 || length > MaxNativeUtf8ByteLength)
-            {
-                return;
-            }
-
-            for (var i = 0; i < length; i++)
-            {
-                AddByte(ref hash, value[i]);
-            }
-        }
-
-        var hash = offsetBasis;
-        AddInt32(ref hash, count);
+        var signature = new NativeBatchSignatureHash(count * 24);
+        signature.AddInt32(count);
         if (items == null || count <= 0)
         {
-            return new NativeObjectReadBatchSignature(unchecked((long)hash), bytes.ToArray());
+            return signature.Build();
         }
 
         for (var i = 0; i < count; i++)
         {
             var item = items[i];
-            AddInt32(ref hash, item.ObjectIndex);
-            AddBytes(ref hash, item.KindUtf8, item.KindUtf8Len);
-            AddBytes(ref hash, item.ImageFormatUtf8, item.ImageFormatUtf8Len);
+            signature.AddInt32(item.ObjectIndex);
+            signature.AddBytes(item.KindUtf8, item.KindUtf8Len);
+            signature.AddBytes(item.ImageFormatUtf8, item.ImageFormatUtf8Len);
         }
-        return new NativeObjectReadBatchSignature(unchecked((long)hash), bytes.ToArray());
+        return signature.Build();
     }
 
     private static void WriteObjectReadBatchItemsV1Into(
@@ -2912,19 +2635,20 @@ public static unsafe class NativeExports
         {
             throw new ArgumentException("object read batch v1 payload buffer is null but payload is non-empty");
         }
-        if (payloadLen > int.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch v1 payload is too large to address as one native buffer");
-        }
 
-        var span = new Span<byte>(payload, (int)payloadLen);
+        // Copy per read at its own offset so the total payload block is not limited to
+        // a single int-addressed span (individual captured arrays are always < 2 GiB).
         foreach (var read in reads)
         {
             if (read.Payload == null || read.Payload.Length == 0)
             {
                 continue;
             }
-            read.Payload.CopyTo(span.Slice((int)read.PayloadOffset, read.Payload.Length));
+            if (read.PayloadOffset < 0 || read.PayloadOffset > payloadLen - read.Payload.Length)
+            {
+                throw new InvalidOperationException("object read batch v1 payload region is out of bounds");
+            }
+            read.Payload.CopyTo(new Span<byte>(payload + read.PayloadOffset, read.Payload.Length));
         }
     }
 
@@ -2951,11 +2675,6 @@ public static unsafe class NativeExports
             pathIds[i] = request->Items[i].PathId;
         }
         return session.EstimateObjectPayloadCapacity(pathIds);
-    }
-
-    private static void RecordElapsed(Dictionary<string, long> phaseMs, string phase, Stopwatch stopwatch)
-    {
-        phaseMs[phase] = stopwatch.ElapsedMilliseconds;
     }
 
     private static string ClassifyReadError(Exception exception)
@@ -3009,17 +2728,6 @@ public static unsafe class NativeExports
             AssetStudioObjectReadErrorKind.AssetNotFound => NativeObjectReadErrorCode.AssetNotFound,
             AssetStudioObjectReadErrorKind.UnsupportedKind => NativeObjectReadErrorCode.UnsupportedKind,
             _ => NativeObjectReadErrorCode.InternalError,
-        };
-    }
-
-    private static string ToNativeErrorCode(AssetStudioObjectReadErrorKind errorKind)
-    {
-        return errorKind switch
-        {
-            AssetStudioObjectReadErrorKind.InvalidRequest => NativeErrorCodes.InvalidRequest,
-            AssetStudioObjectReadErrorKind.AssetNotFound => NativeErrorCodes.AssetNotFound,
-            AssetStudioObjectReadErrorKind.UnsupportedKind => NativeErrorCodes.UnsupportedKind,
-            _ => NativeErrorCodes.InternalError,
         };
     }
 
@@ -3149,38 +2857,6 @@ public static unsafe class NativeExports
             }
         }
         return (int)total;
-    }
-
-    private static byte* WriteObjectReadBatchPayloadToNative(IEnumerable<NativeObjectReadItemBuildResult> reads, long payloadLen)
-    {
-        if (payloadLen <= 0)
-        {
-            return null;
-        }
-        if (payloadLen > int.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch payload is too large to address as one native buffer");
-        }
-
-        var buffer = (byte*)NativeMemory.Alloc((nuint)payloadLen);
-        try
-        {
-            var span = new Span<byte>(buffer, (int)payloadLen);
-            foreach (var read in reads)
-            {
-                if (read.Payload == null || read.Payload.Length == 0)
-                {
-                    continue;
-                }
-                read.Payload.CopyTo(span.Slice((int)read.PayloadOffset, read.Payload.Length));
-            }
-            return buffer;
-        }
-        catch
-        {
-            NativeMemory.Free(buffer);
-            throw;
-        }
     }
 
     private static IReadOnlyCollection<string>? ParseNativeAssetTypes(byte* value, int byteLength)
@@ -3649,23 +3325,6 @@ public static unsafe class NativeExports
         }
     }
 
-    private static int ObjectIndexCountForContext(long contextId)
-    {
-        if (TryAcquireSession(contextId, out var context) != NativeContextAcquireResult.Acquired || context == null)
-        {
-            return 0;
-        }
-
-        try
-        {
-            return context.Session.ObjectIndexCount;
-        }
-        finally
-        {
-            context.Release();
-        }
-    }
-
     private static long ReadLongEnvironment(string name, long defaultValue)
     {
         var value = Environment.GetEnvironmentVariable(name);
@@ -3677,23 +3336,6 @@ public static unsafe class NativeExports
         return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? Math.Max(0, parsed)
             : defaultValue;
-    }
-
-    private static void CloseAllSessions()
-    {
-        ActiveNativeContext[] contexts;
-        lock (SessionsSync)
-        {
-            contexts = Sessions.Values.ToArray();
-            Sessions.Clear();
-        }
-
-        foreach (var context in contexts)
-        {
-            ReleaseResultArenasForContext(context.ContextId);
-            context.ClearPendingReadBatch();
-            context.Session.Dispose();
-        }
     }
 
     private static void ReleaseResultArenasForContext(long contextId)
@@ -3719,22 +3361,29 @@ public static unsafe class NativeExports
         }
     }
 
-    private static string ShellQuote(string value)
+    /// <summary>
+    /// Native libraries shipped next to this dylib. Only these are routed through
+    /// the custom resolver; anything else falls back to default probing.
+    /// </summary>
+    private static readonly string[] ShippedNativeDependencyNames =
     {
-        return value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
-    }
+        "Texture2DDecoderNative",
+        "AssetStudioFBXNative",
+        "ooz",
+        "fmod",
+    };
 
     private static IntPtr ResolveAssetStudioNativeLibrary(
         string libraryName,
         Assembly assembly,
         DllImportSearchPath? searchPath)
     {
-        if (!string.Equals(libraryName, "Texture2DDecoderNative", StringComparison.Ordinal))
+        if (!ShippedNativeDependencyNames.Contains(libraryName, StringComparer.Ordinal))
         {
             return IntPtr.Zero;
         }
 
-        foreach (var candidate in NativeDependencyCandidates())
+        foreach (var candidate in NativeDependencyCandidates(libraryName))
         {
             if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, assembly, searchPath, out var handle))
             {
@@ -3745,9 +3394,9 @@ public static unsafe class NativeExports
         return IntPtr.Zero;
     }
 
-    private static IEnumerable<string> NativeDependencyCandidates()
+    private static IEnumerable<string> NativeDependencyCandidates(string libraryName)
     {
-        var fileName = NativeDependencyFileName();
+        var fileName = NativeDependencyFileName(libraryName);
         foreach (var path in ConfiguredNativeDependencyPaths())
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -3759,6 +3408,18 @@ public static unsafe class NativeExports
             {
                 yield return path;
                 continue;
+            }
+
+            // The env var conventionally points at this FFI library itself; sibling
+            // dependencies live in the same directory.
+            if (File.Exists(path))
+            {
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    yield return Path.Combine(directory, fileName);
+                    continue;
+                }
             }
 
             yield return Path.Combine(path, fileName);
@@ -3883,17 +3544,17 @@ public static unsafe class NativeExports
         return $"{os}-{arch}";
     }
 
-    private static string NativeDependencyFileName()
+    private static string NativeDependencyFileName(string libraryName)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return "Texture2DDecoderNative.dll";
+            return libraryName + ".dll";
         }
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            return "libTexture2DDecoderNative.dylib";
+            return "lib" + libraryName + ".dylib";
         }
-        return "libTexture2DDecoderNative.so";
+        return "lib" + libraryName + ".so";
     }
 }
 
@@ -4511,13 +4172,15 @@ internal sealed class NativeObjectReadBatchBuildResult
         int failedCount,
         long itemsBufferLen,
         int stringDataLen,
-        long payloadLen)
+        long payloadLen,
+        bool hasCapturedPayloads)
     {
         Reads = reads;
         FailedCount = failedCount;
         ItemsBufferLen = itemsBufferLen;
         StringDataLen = stringDataLen;
         PayloadLen = payloadLen;
+        HasCapturedPayloads = hasCapturedPayloads;
     }
 
     public IReadOnlyList<NativeObjectReadItemBuildResult> Reads { get; }
@@ -4525,6 +4188,13 @@ internal sealed class NativeObjectReadBatchBuildResult
     public long ItemsBufferLen { get; }
     public int StringDataLen { get; }
     public long PayloadLen { get; }
+
+    /// <summary>
+    /// True when <see cref="NativeObjectReadItemBuildResult.Payload"/> holds the payload
+    /// bytes for every successful read, so the packed payload block can be reproduced by
+    /// memcpy without re-reading (and re-decoding) the objects.
+    /// </summary>
+    public bool HasCapturedPayloads { get; }
 }
 
 internal sealed class NativeObjectTableBuildResult
@@ -4671,23 +4341,6 @@ internal sealed class NativeDiagnostics
     public void Exception(string operationId, Exception exception)
     {
         Event(operationId, "exception", exception.ToString());
-    }
-
-    public IReadOnlyCollection<string> ResponseWarnings(string operationId, params string[] extraWarnings)
-    {
-        var hasDiagnostics = enabled && logPath != null;
-        if (!hasDiagnostics && extraWarnings.Length == 0)
-        {
-            return Array.Empty<string>();
-        }
-
-        var warnings = new List<string>(extraWarnings.Length + (hasDiagnostics ? 1 : 0));
-        if (hasDiagnostics)
-        {
-            warnings.Add($"native diagnostics op={operationId} log={logPath}");
-        }
-        warnings.AddRange(extraWarnings);
-        return warnings;
     }
 
     private void Write(string line)
@@ -4917,47 +4570,76 @@ internal sealed unsafe class NativeResultArena : IDisposable
     }
 }
 
-internal sealed class CountingWriteStream : Stream
+/// <summary>
+/// Streams payload bytes straight into the caller-provided buffer while they fit.
+/// On overflow it either spills to an owned native buffer (retry paths: the data is
+/// still needed) or degrades to counting only (direct into paths: the call will
+/// return BUFFER_TOO_SMALL, only the required sizes matter). <see cref="Length"/>
+/// always reflects the full logical payload size, so per-item measurements taken
+/// from stream position deltas stay correct after an overflow.
+/// </summary>
+internal sealed unsafe class NativeOptimisticPayloadStream : Stream
 {
-    public long BytesWritten { get; private set; }
+    private enum WriteMode
+    {
+        CallerBuffer,
+        NativeSpill,
+        CountOnly,
+    }
+
+    private readonly byte* callerBuffer;
+    private readonly long callerCapacity;
+    private readonly bool spillToNativeOnOverflow;
+    private byte* ownedPointer;
+    private long ownedCapacity;
+    private long length;
+    private WriteMode mode = WriteMode.CallerBuffer;
+
+    public NativeOptimisticPayloadStream(byte* callerBuffer, long callerCapacity, bool spillToNativeOnOverflow)
+    {
+        this.callerBuffer = callerBuffer;
+        this.callerCapacity = callerBuffer == null ? 0 : Math.Max(0, callerCapacity);
+        this.spillToNativeOnOverflow = spillToNativeOnOverflow;
+    }
+
+    /// <summary>True when the payload did not fit in the caller buffer.</summary>
+    public bool Overflowed => mode != WriteMode.CallerBuffer;
+
+    /// <summary>True when the payload lives in an owned native buffer (retry spill).</summary>
+    public bool UsedNativeBuffer => mode == WriteMode.NativeSpill;
+
     public override bool CanRead => false;
     public override bool CanSeek => false;
     public override bool CanWrite => true;
-    public override long Length => BytesWritten;
+    public override long Length => length;
     public override long Position
     {
-        get => BytesWritten;
+        get => length;
         set => throw new NotSupportedException();
     }
-    public override void Flush() { }
-    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-    public override void SetLength(long value) => throw new NotSupportedException();
-    public override void Write(byte[] buffer, int offset, int count) => BytesWritten += count;
-    public override void Write(ReadOnlySpan<byte> buffer) => BytesWritten += buffer.Length;
-}
 
-internal sealed unsafe class NativeBufferWriteStream : Stream
-{
-    private readonly byte* buffer;
-    private readonly long capacity;
-    private long position;
-
-    public NativeBufferWriteStream(byte* buffer, long capacity)
+    /// <summary>
+    /// Transfers ownership of the spilled native buffer to the caller, first shrinking
+    /// the doubling-grown allocation back to the exact payload length so the result
+    /// arena does not retain over-allocated capacity.
+    /// </summary>
+    public byte* Detach()
     {
-        this.buffer = buffer;
-        this.capacity = capacity;
+        if (ownedPointer != null && length > 0 && length < ownedCapacity)
+        {
+            var trimmed = (byte*)NativeMemory.Realloc(ownedPointer, (nuint)length);
+            if (trimmed != null)
+            {
+                ownedPointer = trimmed;
+                ownedCapacity = length;
+            }
+        }
+        var detached = ownedPointer;
+        ownedPointer = null;
+        ownedCapacity = 0;
+        return detached;
     }
 
-    public override bool CanRead => false;
-    public override bool CanSeek => false;
-    public override bool CanWrite => true;
-    public override long Length => position;
-    public override long Position
-    {
-        get => position;
-        set => throw new NotSupportedException();
-    }
     public override void Flush() { }
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
@@ -4974,12 +4656,84 @@ internal sealed unsafe class NativeBufferWriteStream : Stream
         {
             return;
         }
-        if (buffer == null || position > capacity - source.Length)
+
+        switch (mode)
         {
-            throw new InvalidOperationException("native payload buffer is too small");
+            case WriteMode.CallerBuffer when callerBuffer != null && length + source.Length <= callerCapacity:
+                source.CopyTo(new Span<byte>(callerBuffer + length, source.Length));
+                length += source.Length;
+                return;
+            case WriteMode.CallerBuffer when spillToNativeOnOverflow:
+                // First write that no longer fits: move what the caller buffer already
+                // holds into an owned native buffer and continue there.
+                EnsureOwnedCapacity(length + source.Length);
+                if (length > 0)
+                {
+                    Buffer.MemoryCopy(callerBuffer, ownedPointer, ownedCapacity, length);
+                }
+                mode = WriteMode.NativeSpill;
+                source.CopyTo(new Span<byte>(ownedPointer + length, source.Length));
+                length += source.Length;
+                return;
+            case WriteMode.CallerBuffer:
+                mode = WriteMode.CountOnly;
+                length += source.Length;
+                return;
+            case WriteMode.NativeSpill:
+                EnsureOwnedCapacity(length + source.Length);
+                source.CopyTo(new Span<byte>(ownedPointer + length, source.Length));
+                length += source.Length;
+                return;
+            default:
+                length += source.Length;
+                return;
         }
-        source.CopyTo(new Span<byte>(buffer + position, source.Length));
-        position += source.Length;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (ownedPointer != null)
+        {
+            NativeMemory.Free(ownedPointer);
+            ownedPointer = null;
+            ownedCapacity = 0;
+        }
+        base.Dispose(disposing);
+    }
+
+    private void EnsureOwnedCapacity(long required)
+    {
+        if (required <= ownedCapacity)
+        {
+            return;
+        }
+
+        var next = ownedCapacity <= 0 ? Math.Max(64 * 1024L, callerCapacity) : ownedCapacity;
+        while (next < required)
+        {
+            if (next > long.MaxValue / 2)
+            {
+                next = required;
+                break;
+            }
+            next *= 2;
+        }
+
+        if ((ulong)next > nuint.MaxValue)
+        {
+            throw new InvalidOperationException("object read batch payload is too large to allocate as one native buffer");
+        }
+
+        var nextPointer = ownedPointer == null
+            ? (byte*)NativeMemory.Alloc((nuint)next)
+            : (byte*)NativeMemory.Realloc(ownedPointer, (nuint)next);
+        if (nextPointer == null)
+        {
+            throw new OutOfMemoryException($"failed to allocate {next} bytes for object read batch payload");
+        }
+
+        ownedPointer = nextPointer;
+        ownedCapacity = next;
     }
 }
 
@@ -5047,92 +4801,6 @@ internal sealed unsafe class NativePayloadAppendStream : Stream
             length = 0;
         }
         base.Dispose(disposing);
-    }
-
-    private void EnsureCapacity(long required)
-    {
-        if (required <= capacity)
-        {
-            return;
-        }
-
-        var next = capacity <= 0 ? 64 * 1024L : capacity;
-        while (next < required)
-        {
-            if (next > long.MaxValue / 2)
-            {
-                next = required;
-                break;
-            }
-            next *= 2;
-        }
-
-        if ((ulong)next > nuint.MaxValue)
-        {
-            throw new InvalidOperationException("object read batch payload is too large to allocate as one native buffer");
-        }
-
-        var nextPointer = pointer == null
-            ? (byte*)NativeMemory.Alloc((nuint)next)
-            : (byte*)NativeMemory.Realloc(pointer, (nuint)next);
-        if (nextPointer == null)
-        {
-            throw new OutOfMemoryException($"failed to allocate {next} bytes for object read batch payload");
-        }
-
-        pointer = nextPointer;
-        capacity = next;
-    }
-}
-
-internal unsafe struct NativePayloadAppendBuffer : IDisposable
-{
-    private byte* pointer;
-    private long capacity;
-
-    public long Length { get; private set; }
-
-    public void Reserve(long capacity)
-    {
-        if (capacity <= 0)
-        {
-            return;
-        }
-        EnsureCapacity(capacity);
-    }
-
-    public void Append(byte[] payload)
-    {
-        if (payload.Length == 0)
-        {
-            return;
-        }
-
-        EnsureCapacity(Length + payload.Length);
-        fixed (byte* source = payload)
-        {
-            Buffer.MemoryCopy(source, pointer + Length, capacity - Length, payload.Length);
-        }
-        Length += payload.Length;
-    }
-
-    public byte* Detach()
-    {
-        var detached = pointer;
-        pointer = null;
-        capacity = 0;
-        return detached;
-    }
-
-    public void Dispose()
-    {
-        if (pointer != null)
-        {
-            NativeMemory.Free(pointer);
-            pointer = null;
-            capacity = 0;
-            Length = 0;
-        }
     }
 
     private void EnsureCapacity(long required)
