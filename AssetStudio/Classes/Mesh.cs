@@ -542,6 +542,7 @@ namespace AssetStudio
 
     public sealed class Mesh : NamedObject
     {
+        private readonly object processDataSync = new object();
         private bool isLoaded;
         private bool m_Use16BitIndices = true;
         public List<SubMesh> m_SubMeshes;
@@ -821,43 +822,51 @@ namespace AssetStudio
         {
             if (isLoaded)
                 return;
-
-            var isStreamedDataSize = false;
-            if (!string.IsNullOrEmpty(m_StreamData?.path))
+            // Concurrent readers may resolve the same lazy mesh; without the lock two
+            // threads can both rent into m_VertexData.m_DataSize and both Return the
+            // same (last-written) array, poisoning the shared pool with an alias.
+            lock (processDataSync)
             {
-                if (m_VertexData.m_VertexCount > 0)
+                if (isLoaded)
+                    return;
+
+                byte[] streamedDataSize = null;
+                if (!string.IsNullOrEmpty(m_StreamData?.path))
                 {
-                    m_VertexData.m_DataSize = BigArrayPool<byte>.Shared.Rent((int)m_StreamData.size);
-                    var resourceReader = new ResourceReader(m_StreamData.path, assetsFile, m_StreamData.offset, m_StreamData.size);
-                    resourceReader.GetData(m_VertexData.m_DataSize);
-                    isStreamedDataSize = true;
+                    if (m_VertexData.m_VertexCount > 0)
+                    {
+                        streamedDataSize = BigArrayPool<byte>.Shared.Rent((int)m_StreamData.size);
+                        m_VertexData.m_DataSize = streamedDataSize;
+                        var resourceReader = new ResourceReader(m_StreamData.path, assetsFile, m_StreamData.offset, m_StreamData.size);
+                        resourceReader.GetData(m_VertexData.m_DataSize);
+                    }
                 }
-            }
-            if (version >= (3, 5)) //3.5 and up
-            {
-                ReadVertexData();
-            }
+                if (version >= (3, 5)) //3.5 and up
+                {
+                    ReadVertexData();
+                }
 
-            if (version >= (2, 6)) //2.6.0 and later
-            {
-                DecompressCompressedMesh();
-            }
+                if (version >= (2, 6)) //2.6.0 and later
+                {
+                    DecompressCompressedMesh();
+                }
 
-            if (m_IndexBuffer.Length == 0)
-            {
-                var msg = m_HasVirtualGeometryMesh
-                    ? "Unsupported mesh type: Virtual Geometry"
-                    : "Cannot process empty mesh";
-                Logger.Warning($"{msg} | PathID: {m_PathID} | Name: \"{m_Name}\"");
-            }
-            else
-            {
-                GetTriangles();
-            }
+                if (m_IndexBuffer.Length == 0)
+                {
+                    var msg = m_HasVirtualGeometryMesh
+                        ? "Unsupported mesh type: Virtual Geometry"
+                        : "Cannot process empty mesh";
+                    Logger.Warning($"{msg} | PathID: {m_PathID} | Name: \"{m_Name}\"");
+                }
+                else
+                {
+                    GetTriangles();
+                }
 
-            isLoaded = true;
-            if (isStreamedDataSize)
-                BigArrayPool<byte>.Shared.Return(m_VertexData.m_DataSize, clearArray: true);
+                isLoaded = true;
+                if (streamedDataSize != null)
+                    BigArrayPool<byte>.Shared.Return(streamedDataSize, clearArray: true);
+            }
         }
 
         private void ReadVertexData()

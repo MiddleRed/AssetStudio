@@ -1117,11 +1117,13 @@ public static unsafe class NativeExports
         catch (ArgumentException ex)
         {
             Diagnostics.Exception("context_read_object_v1", ex);
+            ReleaseNativeObjectReadResponseResources(response);
             return Fail(response, stopwatch, 2, NativeObjectReadErrorCode.InvalidRequest);
         }
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_object_v1", ex);
+            ReleaseNativeObjectReadResponseResources(response);
             return Fail(response, stopwatch, ClassifyReadStatus(ex), ToNativeObjectReadErrorCode(ClassifyReadError(ex)));
         }
     }
@@ -1132,6 +1134,60 @@ public static unsafe class NativeExports
         response->AbiVersion = FfiAbiVersion;
         response->SchemaVersion = FfiSchemaVersion;
         response->ObjectReadAbiVersion = FfiObjectReadAbiVersion;
+    }
+
+    /// <summary>
+    /// Frees native blocks already attached to a response on a failure path and
+    /// zeroes the pointers: a non-zero status must never carry live allocations,
+    /// because callers only free resources of successful responses.
+    /// </summary>
+    private static void ReleaseNativeObjectReadResponseResources(NativeObjectReadResponse* response)
+    {
+        if (response == null)
+        {
+            return;
+        }
+        if (response->Payload != null)
+        {
+            NativeMemory.Free(response->Payload);
+            response->Payload = null;
+        }
+        response->PayloadLen = 0;
+        if (response->Buffer != null)
+        {
+            NativeMemory.Free(response->Buffer);
+            response->Buffer = null;
+        }
+        response->BufferLen = 0;
+        response->PayloadKind = null;
+        response->PayloadKindLen = 0;
+        response->SuggestedExtension = null;
+        response->SuggestedExtensionLen = 0;
+    }
+
+    /// <inheritdoc cref="ReleaseNativeObjectReadResponseResources"/>
+    private static void ReleaseNativeObjectReadBatchResponseResources(NativeObjectReadBatchResponse* response)
+    {
+        if (response == null)
+        {
+            return;
+        }
+        if (response->Payload != null)
+        {
+            NativeMemory.Free(response->Payload);
+            response->Payload = null;
+        }
+        response->PayloadLen = 0;
+        if (response->ItemsBuffer != null)
+        {
+            NativeMemory.Free(response->ItemsBuffer);
+            response->ItemsBuffer = null;
+        }
+        response->ItemsBufferLen = 0;
+        response->Items = null;
+        response->StringData = null;
+        response->StringDataLen = 0;
+        response->ReturnedCount = 0;
     }
 
     [UnmanagedCallersOnly(EntryPoint = "haruki_assetstudio_context_read_objects_v1", CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -1205,6 +1261,7 @@ public static unsafe class NativeExports
         catch (Exception ex)
         {
             Diagnostics.Exception("context_read_objects_v1", ex);
+            ReleaseNativeObjectReadBatchResponseResources(response);
             return Fail(response, stopwatch, 100, NativeObjectReadErrorCode.InternalError);
         }
         finally
