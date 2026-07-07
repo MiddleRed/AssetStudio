@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>Library</OutputType>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <AssemblyName>HarukiAssetStudioFFI</AssemblyName>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -35,8 +35,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\AssetStudio\AssetStudio.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" />
-        <ProjectReference Include="..\AssetStudioCore\AssetStudioCore.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" />
+        <ProjectReference Include="..\AssetStudio\AssetStudio.csproj" SetTargetFramework="TargetFramework=net10.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" />
+        <ProjectReference Include="..\AssetStudioCore\AssetStudioCore.csproj" SetTargetFramework="TargetFramework=net10.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" />
     </ItemGroup>
 
     <Target Name="CopyHarukiNativeAotRuntimeLibraries" AfterTargets="Publish">

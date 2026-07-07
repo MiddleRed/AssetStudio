@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>net472;net8.0;net9.0</TargetFrameworks>
+        <TargetFrameworks>net472;net8.0;net9.0;net10.0</TargetFrameworks>
         <AssemblyTitle>AssetStudio Core</AssemblyTitle>
         <AssemblyName>AssetStudioCore</AssemblyName>
         <Version>0.19.0.0</Version>
@@ -29,9 +29,9 @@
         <ProjectReference Include="..\AssetStudioUtility\AssetStudioUtility.csproj" Condition=" '$(PublishAot)' != 'true' " />
         <ProjectReference Include="..\AssetStudioFBXWrapper\AssetStudioFBXWrapper.csproj" Condition=" '$(PublishAot)' != 'true' " />
         <ProjectReference Include="..\AssetStudio\AssetStudio.csproj" Condition=" '$(PublishAot)' != 'true' " />
-        <ProjectReference Include="..\AssetStudioUtility\AssetStudioUtility.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
-        <ProjectReference Include="..\AssetStudioFBXWrapper\AssetStudioFBXWrapper.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
-        <ProjectReference Include="..\AssetStudio\AssetStudio.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
+        <ProjectReference Include="..\AssetStudioUtility\AssetStudioUtility.csproj" SetTargetFramework="TargetFramework=net10.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
+        <ProjectReference Include="..\AssetStudioFBXWrapper\AssetStudioFBXWrapper.csproj" SetTargetFramework="TargetFramework=net10.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
+        <ProjectReference Include="..\AssetStudio\AssetStudio.csproj" SetTargetFramework="TargetFramework=net10.0" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;NativeLib;SelfContained" Condition=" '$(PublishAot)' == 'true' " />
     </ItemGroup>
 
 </Project>
