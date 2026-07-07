@@ -61,6 +61,12 @@ public static unsafe class NativeExports
     {
         SixLabors.ImageSharp.Configuration.Default.MaxDegreeOfParallelism = 1;
         NativeLibrary.SetDllImportResolver(typeof(TextureDecoder).Assembly, ResolveAssetStudioNativeLibrary);
+        // The resolver is per-assembly. The FBX wrapper (AssetStudioFBXNative) and
+        // the AssetStudio core (ooz, fmod) declare their own DllImports; default
+        // probing does not search this shared library's directory, so without the
+        // resolver those loads fail even when the .so ships right next to us.
+        NativeLibrary.SetDllImportResolver(typeof(AssetStudio.Fbx).Assembly, ResolveAssetStudioNativeLibrary);
+        NativeLibrary.SetDllImportResolver(typeof(AssetStudio.AssetsManager).Assembly, ResolveAssetStudioNativeLibrary);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             Diagnostics.Event("process", "unhandled_exception", args.ExceptionObject?.ToString());
         TaskScheduler.UnobservedTaskException += (_, args) =>
@@ -3442,17 +3448,29 @@ public static unsafe class NativeExports
         return value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
     }
 
+    /// <summary>
+    /// Native libraries shipped next to this dylib. Only these are routed through
+    /// the custom resolver; anything else falls back to default probing.
+    /// </summary>
+    private static readonly string[] ShippedNativeDependencyNames =
+    {
+        "Texture2DDecoderNative",
+        "AssetStudioFBXNative",
+        "ooz",
+        "fmod",
+    };
+
     private static IntPtr ResolveAssetStudioNativeLibrary(
         string libraryName,
         Assembly assembly,
         DllImportSearchPath? searchPath)
     {
-        if (!string.Equals(libraryName, "Texture2DDecoderNative", StringComparison.Ordinal))
+        if (!ShippedNativeDependencyNames.Contains(libraryName, StringComparer.Ordinal))
         {
             return IntPtr.Zero;
         }
 
-        foreach (var candidate in NativeDependencyCandidates())
+        foreach (var candidate in NativeDependencyCandidates(libraryName))
         {
             if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, assembly, searchPath, out var handle))
             {
@@ -3463,9 +3481,9 @@ public static unsafe class NativeExports
         return IntPtr.Zero;
     }
 
-    private static IEnumerable<string> NativeDependencyCandidates()
+    private static IEnumerable<string> NativeDependencyCandidates(string libraryName)
     {
-        var fileName = NativeDependencyFileName();
+        var fileName = NativeDependencyFileName(libraryName);
         foreach (var path in ConfiguredNativeDependencyPaths())
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -3477,6 +3495,18 @@ public static unsafe class NativeExports
             {
                 yield return path;
                 continue;
+            }
+
+            // The env var conventionally points at this FFI library itself; sibling
+            // dependencies live in the same directory.
+            if (File.Exists(path))
+            {
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    yield return Path.Combine(directory, fileName);
+                    continue;
+                }
             }
 
             yield return Path.Combine(path, fileName);
@@ -3601,17 +3631,17 @@ public static unsafe class NativeExports
         return $"{os}-{arch}";
     }
 
-    private static string NativeDependencyFileName()
+    private static string NativeDependencyFileName(string libraryName)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return "Texture2DDecoderNative.dll";
+            return libraryName + ".dll";
         }
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            return "libTexture2DDecoderNative.dylib";
+            return "lib" + libraryName + ".dylib";
         }
-        return "libTexture2DDecoderNative.so";
+        return "lib" + libraryName + ".so";
     }
 }
 
