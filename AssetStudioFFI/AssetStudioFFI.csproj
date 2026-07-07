@@ -8,7 +8,17 @@
         <PublishAot>true</PublishAot>
         <NativeLib>Shared</NativeLib>
         <SelfContained>true</SelfContained>
-        <InvariantGlobalization>false</InvariantGlobalization>
+        <!-- First-party code only uses InvariantCulture and the FFI contract is
+             culture-independent (UTF-8 in/out, invariant formatting), so ICU can be
+             dropped from the NativeAOT binary. -->
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- NativeAOT size trimming. Stack trace data is kept on purpose: exception
+             text flows into per-item FFI error strings and the trace file sink. -->
+        <StripSymbols>true</StripSymbols>
+        <DebuggerSupport>false</DebuggerSupport>
+        <EventSourceSupport>false</EventSourceSupport>
+        <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+        <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
         <IsAotCompatible>true</IsAotCompatible>
         <!-- Source-level NativeAOT warnings in the FFI path are fixed or documented with
              targeted suppressions. The remaining IL2026/IL2104/IL3053 output is
