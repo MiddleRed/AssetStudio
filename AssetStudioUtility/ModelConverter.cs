@@ -24,11 +24,13 @@ namespace AssetStudio
         Dictionary<uint, string> morphChannelNames = new Dictionary<uint, string>();
         private IEqualityComparer<AnimationClip> animationClipEqComparer = new AnimationClip.EqComparer();
         private bool collectAnimationClips;
+        private readonly bool convertTextures;
 
-        public ModelConverter(GameObject m_GameObject, ImageFormat imageFormat, List<AnimationClip> animationList = null)
+        public ModelConverter(GameObject m_GameObject, ImageFormat imageFormat, List<AnimationClip> animationList = null, bool convertTextures = true)
         {
             collectAnimationClips = animationList == null;
             this.imageFormat = imageFormat;
+            this.convertTextures = convertTextures;
             if (m_GameObject.m_Animator != null)
             {
                 InitWithAnimator(m_GameObject.m_Animator);
@@ -49,10 +51,11 @@ namespace AssetStudio
             ConvertAnimations();
         }
 
-        public ModelConverter(string rootName, List<GameObject> m_GameObjects, ImageFormat imageFormat, List<AnimationClip> animationList = null)
+        public ModelConverter(string rootName, List<GameObject> m_GameObjects, ImageFormat imageFormat, List<AnimationClip> animationList = null, bool convertTextures = true)
         {
             collectAnimationClips = animationList == null;
             this.imageFormat = imageFormat;
+            this.convertTextures = convertTextures;
             RootFrame = CreateFrame(rootName, Vector3.Zero, new Quaternion(0, 0, 0, 0), Vector3.One);
             foreach (var m_GameObject in m_GameObjects)
             {
@@ -78,10 +81,11 @@ namespace AssetStudio
             ConvertAnimations();
         }
 
-        public ModelConverter(Animator m_Animator, ImageFormat imageFormat, List<AnimationClip> animationList = null)
+        public ModelConverter(Animator m_Animator, ImageFormat imageFormat, List<AnimationClip> animationList = null, bool convertTextures = true)
         {
             collectAnimationClips = animationList == null;
             this.imageFormat = imageFormat;
+            this.convertTextures = convertTextures;
             InitWithAnimator(m_Animator);
             if (collectAnimationClips)
             {
@@ -750,7 +754,10 @@ namespace AssetStudio
 
                     texture.Offset = texEnv.Value.m_Offset;
                     texture.Scale = texEnv.Value.m_Scale;
-                    ConvertTexture2D(m_Texture2D, texture.Name);
+                    if (convertTextures)
+                    {
+                        ConvertTexture2D(m_Texture2D, texture.Name);
+                    }
                 }
 
                 MaterialList.Add(iMat);
