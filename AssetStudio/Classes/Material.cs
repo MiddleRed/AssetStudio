@@ -69,6 +69,8 @@ namespace AssetStudio
     public sealed class Material : NamedObject
     {
         public PPtr<Shader> m_Shader;
+        public string[] m_ValidKeywords = System.Array.Empty<string>();
+        public string[] m_InvalidKeywords = System.Array.Empty<string>();
         public UnityPropertySheet m_SavedProperties;
 
         public Material() { }
@@ -79,6 +81,8 @@ namespace AssetStudio
         {
             var parsedMaterial = JsonSerializer.Deserialize<Material>(type, jsonOptions);
             m_Shader = parsedMaterial.m_Shader;
+            m_ValidKeywords = parsedMaterial.m_ValidKeywords ?? System.Array.Empty<string>();
+            m_InvalidKeywords = parsedMaterial.m_InvalidKeywords ?? System.Array.Empty<string>();
             m_SavedProperties = parsedMaterial.m_SavedProperties;
         }
 
@@ -93,8 +97,8 @@ namespace AssetStudio
 
             if (version >= (2021, 2, 18)) //2021.2.18 and up
             {
-                var m_ValidKeywords = reader.ReadStringArray();
-                var m_InvalidKeywords = reader.ReadStringArray();
+                m_ValidKeywords = reader.ReadStringArray();
+                m_InvalidKeywords = reader.ReadStringArray();
             }
             else if (version >= 5) //5.0 - 2021.2.17
             {
