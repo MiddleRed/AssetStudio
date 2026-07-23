@@ -15,6 +15,7 @@ namespace AssetStudio
         public int m_MipCount;
         public GLTextureSettings m_TextureSettings;
         public int m_ImageCount;
+        public int m_ColorSpace;
         public byte[] m_PlatformBlob;
         [JsonPropertyName("image data")]
         public ResourceReader image_data;
@@ -38,6 +39,7 @@ namespace AssetStudio
             m_Height = m_Texture2DArray.m_Height;
             m_TextureFormat = m_Texture2DArray.m_Format.ToTextureFormat();
             m_MipCount = m_Texture2DArray.m_MipCount;
+            m_ColorSpace = m_Texture2DArray.m_ColorSpace;
             m_TextureSettings = m_Texture2DArray.m_TextureSettings;
             m_StreamData = m_Texture2DArray.m_StreamData;
             m_PlatformBlob = Array.Empty<byte>();
@@ -68,6 +70,7 @@ namespace AssetStudio
             m_MipMap = parsedTex2d.m_MipMap;
             m_MipCount = parsedTex2d.m_MipCount;
             m_ImageCount = parsedTex2d.m_ImageCount;
+            m_ColorSpace = parsedTex2d.m_ColorSpace;
             m_TextureSettings = parsedTex2d.m_TextureSettings;
             m_StreamData = parsedTex2d.m_StreamData;
             m_PlatformBlob = parsedTex2d.m_PlatformBlob ?? Array.Empty<byte>();
@@ -160,7 +163,7 @@ namespace AssetStudio
             }
             if (version >= (3, 5)) //3.5.0 and up
             {
-                var m_ColorSpace = reader.ReadInt32();
+                m_ColorSpace = reader.ReadInt32();
             }
             if (version >= (2020, 2)) //2020.2 and up
             {

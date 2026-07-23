@@ -9,7 +9,13 @@ namespace AssetStudio
         public float m_MipBias;
         public int m_WrapMode;
         [JsonInclude]
-        private int m_WrapU { set => m_WrapMode = value; }
+        public int m_WrapU
+        {
+            get => m_WrapMode;
+            set => m_WrapMode = value;
+        }
+        public int m_WrapV;
+        public int m_WrapW;
 
         public GLTextureSettings() { }
 
@@ -22,13 +28,15 @@ namespace AssetStudio
             m_MipBias = reader.ReadSingle();
             if (version >= 2017)//2017.x and up
             {
-                m_WrapMode = reader.ReadInt32(); //m_WrapU
-                var m_WrapV = reader.ReadInt32();
-                var m_WrapW = reader.ReadInt32();
+                m_WrapU = reader.ReadInt32();
+                m_WrapV = reader.ReadInt32();
+                m_WrapW = reader.ReadInt32();
             }
             else
             {
-                m_WrapMode = reader.ReadInt32();
+                m_WrapU = reader.ReadInt32();
+                m_WrapV = m_WrapU;
+                m_WrapW = m_WrapU;
             }
         }
     }

@@ -71,6 +71,12 @@ namespace AssetStudio
         public PPtr<Shader> m_Shader;
         public string[] m_ValidKeywords = System.Array.Empty<string>();
         public string[] m_InvalidKeywords = System.Array.Empty<string>();
+        public uint m_LightmapFlags;
+        public bool m_EnableInstancingVariants;
+        public bool m_DoubleSidedGI;
+        public int m_CustomRenderQueue = -1;
+        public Dictionary<string, string> m_StringTagMap = new Dictionary<string, string>();
+        public string[] m_DisabledShaderPasses = System.Array.Empty<string>();
         public UnityPropertySheet m_SavedProperties;
 
         public Material() { }
@@ -83,6 +89,12 @@ namespace AssetStudio
             m_Shader = parsedMaterial.m_Shader;
             m_ValidKeywords = parsedMaterial.m_ValidKeywords ?? System.Array.Empty<string>();
             m_InvalidKeywords = parsedMaterial.m_InvalidKeywords ?? System.Array.Empty<string>();
+            m_LightmapFlags = parsedMaterial.m_LightmapFlags;
+            m_EnableInstancingVariants = parsedMaterial.m_EnableInstancingVariants;
+            m_DoubleSidedGI = parsedMaterial.m_DoubleSidedGI;
+            m_CustomRenderQueue = parsedMaterial.m_CustomRenderQueue;
+            m_StringTagMap = parsedMaterial.m_StringTagMap ?? new Dictionary<string, string>();
+            m_DisabledShaderPasses = parsedMaterial.m_DisabledShaderPasses ?? System.Array.Empty<string>();
             m_SavedProperties = parsedMaterial.m_SavedProperties;
         }
 
@@ -107,19 +119,22 @@ namespace AssetStudio
 
             if (version >= 5) //5.0 and up
             {
-                var m_LightmapFlags = reader.ReadUInt32();
+                m_LightmapFlags = reader.ReadUInt32();
             }
 
             if (version >= (5, 6)) //5.6 and up
             {
-                var m_EnableInstancingVariants = reader.ReadBoolean();
-                //var m_DoubleSidedGI = a_Stream.ReadBoolean(); //2017 and up
+                m_EnableInstancingVariants = reader.ReadBoolean();
+                if (version >= 2017)
+                {
+                    m_DoubleSidedGI = reader.ReadBoolean();
+                }
                 reader.AlignStream();
             }
 
             if (version >= (4, 3)) //4.3 and up
             {
-                var m_CustomRenderQueue = reader.ReadInt32();
+                m_CustomRenderQueue = reader.ReadInt32();
             }
 
             if (version >= (5, 1)) //5.1 and up
@@ -129,12 +144,13 @@ namespace AssetStudio
                 {
                     var first = reader.ReadAlignedString();
                     var second = reader.ReadAlignedString();
+                    m_StringTagMap[first] = second;
                 }
             }
 
             if (version >= (5, 6)) //5.6 and up
             {
-                var disabledShaderPasses = reader.ReadStringArray();
+                m_DisabledShaderPasses = reader.ReadStringArray();
             }
 
             m_SavedProperties = new UnityPropertySheet(reader);
